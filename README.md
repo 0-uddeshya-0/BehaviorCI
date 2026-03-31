@@ -1,54 +1,170 @@
-# BehaviorCI
+<p align="center">
+  <img src="https://raw.githubusercontent.com/0-uddeshya-0/BehaviorCI/main/assets/logo.svg" width="120" alt="BehaviorCI Logo">
+</p>
 
-Pytest-native behavioral regression testing for LLM applications.
+<h1 align="center">BehaviorCI</h1>
 
-## Overview
+<p align="center">
+  <strong>pytest for LLM behavior</strong><br>
+  Catch prompt regressions before they reach production.
+</p>
 
-BehaviorCI enables developers to:
+<p align="center">
+  <a href="https://pypi.org/project/behaviorci/"><img src="https://img.shields.io/pypi/v/behaviorci.svg" alt="PyPI"></a>
+  <a href="https://github.com/0-uddeshya-0/BehaviorCI/actions"><img src="https://github.com/0-uddeshya-0/BehaviorCI/workflows/CI/badge.svg" alt="CI"></a>
+  <a href="https://codecov.io/gh/0-uddeshya-0/BehaviorCI"><img src="https://codecov.io/gh/0-uddeshya-0/BehaviorCI/branch/main/graph/badge.svg" alt="Coverage"></a>
+  <a href="https://opensource.org/licenses/MIT"><img src="https://img.shields.io/badge/License-MIT-yellow.svg" alt="License"></a>
+</p>
 
-1. **Write tests using normal pytest functions**
-2. **Capture LLM outputs as behavioral snapshots**
-3. **Compare future outputs using semantic similarity**
-4. **Fail CI when behavior regresses**
+---
 
-Think: "Jest snapshot testing for LLM outputs, using embeddings instead of string equality."
+## The Problem
 
-## Quick Start
+You shipped a prompt update. It looked fine in testing. Then production metrics dropped.
 
-### Installation
+**What happened?** Your "improved" prompt changed output format. The downstream parser broke. Users saw errors. Revenue dipped.
+
+Traditional testing doesn't catch this. Unit tests pass. Integration tests pass. But **behavior changed** in subtle ways that matter.
+
+```python
+# Before: "The refund will be processed in 3-5 business days."
+# After:  "Refund approved. Processing time: 3-5 days."
+# Similar meaning. Different format. Broken parser.
+```
+
+## The Solution
+
+BehaviorCI captures your LLM outputs as **behavioral snapshots** and detects **semantic drift** using embeddings. Not string matching—**meaning comparison**.
+
+```python
+from behaviorci import behavior
+
+@behavior("refund_classifier", threshold=0.85, must_contain=["days"])
+def test_refund_processing():
+    result = classify_support_ticket("How long for refund?")
+    return result  # RETURN VALUE CAPTURED
+```
+
+**Record once. Check forever. Fail on drift.**
+
+---
+
+## Why BehaviorCI?
+
+| Without BehaviorCI | With BehaviorCI |
+|-------------------|-----------------|
+| "Looks good to me" code reviews | Automated regression detection |
+| Production surprises | CI fails before merge |
+| Manual output inspection | Semantic similarity scoring |
+| "It worked yesterday" mysteries | Per-input variance tracking |
+| Silent prompt degradation | Quantified behavior drift |
+
+**Used by teams shipping LLM applications to production.**
+
+---
+
+## Quick Start (60 seconds)
+
+### 1. Install
 
 ```bash
 pip install behaviorci
 ```
 
-### Write Your First Behavior Test
+**First run downloads the embedding model (~22MB).** Subsequent runs are instant and offline.
+
+### 2. Write Your First Behavior Test
 
 ```python
+# test_support.py
 from behaviorci import behavior
 
-@behavior("refund_classifier", threshold=0.85)
-def test_refund_classification():
-    result = classify("I want a refund")
-    return result  # RETURN VALUE CAPTURED
+@behavior("support_tone_check", threshold=0.90, must_contain=["help"])
+def test_support_response_tone():
+    """Verify support responses maintain helpful tone."""
+    response = generate_support_response("I'm frustrated with billing")
+    return response  # Must return string
 ```
 
-### Record Baseline
+### 3. Record Baseline
 
 ```bash
-pytest --behaviorci-record
+pytest test_support.py --behaviorci-record
 ```
 
-### Check for Regressions
+```
+.behaviorci/behaviorci.db created
+1 snapshot recorded
+```
+
+### 4. Check for Regressions
+
+Change your prompt. Run check:
 
 ```bash
-pytest --behaviorci
+pytest test_support.py --behaviorci
 ```
 
-### Update on Intentional Changes
+```
+FAILED test_support.py::test_support_response_tone
+BehaviorCI: Similarity 0.72 < threshold 0.90
+--- STORED OUTPUT ---
+I'm sorry to hear about your billing frustration. Let me help resolve this...
+--- CURRENT OUTPUT ---
+Billing issues are handled by our finance team. Contact finance@example.com.
+```
+
+**Regression caught in CI, not production.**
+
+### 5. Update When Intentional
 
 ```bash
-pytest --behaviorci-update
+pytest test_support.py --behaviorci-update
 ```
+
+---
+
+## How It Works
+
+```
+┌─────────────────┐     ┌──────────────────┐     ┌─────────────────┐
+│   Test Function │────▶│  @behavior       │────▶│  Capture Output │
+│   (returns str) │     │  (decorator)     │     │  + Input Args   │
+└─────────────────┘     └──────────────────┘     └─────────────────┘
+                                                        │
+                              ┌─────────────────────────┘
+                              ▼
+                    ┌──────────────────┐
+                    │  SQLite Storage  │
+                    │  (.behaviorci/)  │
+                    │                  │
+                    │  • Input hash    │
+                    │  • Output text   │
+                    │  • Embedding     │◄── sentence-transformers
+                    │  • History       │    (all-MiniLM-L6-v2)
+                    └──────────────────┘
+                              │
+                    ┌─────────┴─────────┐
+                    ▼                   ▼
+            ┌──────────────┐    ┌──────────────┐
+            │  Layer 0:    │    │  Layer 1:    │
+            │  Lexical     │    │  Semantic    │
+            │  (must_contain)   │  (embedding  │
+            │              │    │  similarity) │
+            └──────────────┘    └──────────────┘
+```
+
+**Layer 0: Lexical Guards** (Fast Fail)
+- `must_contain`: Required substrings
+- `must_not_contain`: Forbidden patterns
+- Zero embedding cost
+
+**Layer 1: Semantic Comparison**
+- Embedding similarity via cosine distance
+- Variance-aware thresholds (adapts to your data)
+- Model mismatch detection
+
+---
 
 ## Core Concepts
 
@@ -56,136 +172,282 @@ pytest --behaviorci-update
 
 ```python
 @behavior(
-    behavior_id="unique_id",      # Logical behavior identifier
-    threshold=0.85,                # Minimum similarity (0-1)
-    must_contain=["required"],     # Required substrings
-    must_not_contain=["forbidden"] # Forbidden substrings
+    behavior_id="unique_identifier",    # Logical name
+    threshold=0.85,                       # Minimum similarity (0-1)
+    must_contain=["required", "words"],   # Required substrings
+    must_not_contain=["forbidden"]        # Forbidden patterns
 )
-def my_test():
-    return llm.generate("prompt")  # Must return string
+def test_your_llm_function():
+    # Execute your LLM call
+    result = your_llm_function("input")
+    return result  # RETURN VALUE IS CAPTURED
 ```
 
-### How It Works
+**Critical**: The test function must return a string. This return value is the behavior being tracked.
 
-1. **Decorator captures return value** from test function
-2. **Input is serialized** to JSON (strict - fails on non-serializable types)
-3. **Snapshot ID** = SHA256(behavior_id + input_json)
-4. **Embedding** computed using local sentence-transformers model
-5. **Comparison** uses cosine similarity with variance-aware thresholds
+### Variance-Aware Thresholds
 
-### Storage
+BehaviorCI learns your normal variance:
 
-- SQLite database at `.behaviorci/behaviorci.db`
-- Embeddings stored as float32 BLOBs
-- Per-snapshot similarity history for variance tracking
+```python
+# First 2 runs: threshold = 0.85 (your setting)
+# Run 3-5: threshold = max(0.85, mean(history) - 2*std)
+# 
+# If your outputs naturally vary (creative writing),
+# threshold adapts to avoid false positives.
+# 
+# If your outputs should be identical (structured data),
+# threshold stays high.
+```
+
+### Storage & CI
+
+```bash
+# Local development
+pytest --behaviorci-record    # Create/update snapshots
+
+# CI pipeline (GitHub Actions, GitLab, etc.)
+pytest --behaviorci           # Fail on regression
+
+# CI with auto-record for new tests
+pytest --behaviorci-record-missing  # Check existing, record new
+```
+
+**Database**: SQLite at `.behaviorci/behaviorci.db`
+- Commit the `.db` file to version control
+- WAL mode enabled for parallel execution
+- Embeddings stored as compressed BLOBs
+
+---
+
+## Installation & Setup
+
+### Requirements
+
+- Python 3.8+
+- pytest 7.0+
+- ~22MB disk space (embedding model)
+
+### pip install
+
+```bash
+pip install behaviorci
+```
+
+### Development install
+
+```bash
+git clone https://github.com/0-uddeshya-0/BehaviorCI.git
+cd BehaviorCI
+pip install -e ".[dev]"
+```
+
+### CI Configuration
+
+**GitHub Actions** (`.github/workflows/behavior.yml`):
+
+```yaml
+name: Behavioral Regression Tests
+
+on: [push, pull_request]
+
+jobs:
+  behavior:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          
+      - uses: actions/cache@v4
+        with:
+          path: ~/.cache/torch/sentence_transformers
+          key: ${{ runner.os }}-sentence-transformers-${{ hashFiles('**/requirements.txt') }}
+          
+      - run: pip install behaviorci pytest
+      
+      # Check existing behaviors, auto-record new ones
+      - run: pytest --behaviorci-record-missing
+      
+      # Commit updated snapshots if on main
+      - uses: stefanzweifel/git-auto-commit-action@v5
+        if: github.ref == 'refs/heads/main'
+        with:
+          commit_message: "Update behavioral snapshots"
+          file_pattern: ".behaviorci/"
+```
+
+**GitLab CI** (`.gitlab-ci.yml`):
+
+```yaml
+behavior_tests:
+  image: python:3.11
+  cache:
+    paths:
+      - .behaviorci/
+      - ~/.cache/torch/sentence_transformers
+  script:
+    - pip install behaviorci pytest
+    - pytest --behaviorci-record-missing
+  artifacts:
+    paths:
+      - .behaviorci/
+    expire_in: 1 week
+```
+
+---
 
 ## CLI Commands
 
 ```bash
-# Record new snapshots
-behaviorci record
+# Record snapshots (create or overwrite)
+behaviorci record [test_directory]
 
 # Check for regressions (CI mode)
-behaviorci check
+behaviorci check [test_directory]
 
-# Update failing snapshots
-behaviorci update
+# Update failing snapshots (accept new behavior)
+behaviorci update [test_directory]
 
-# View statistics
+# Record only missing snapshots (CI workflow)
+behaviorci record-missing [test_directory]
+
+# View database statistics
 behaviorci stats
 
-# Clear all snapshots
+# Clear all snapshots (destructive)
 behaviorci clear --force
 ```
 
-## Configuration Options
+All commands support `--db PATH` for custom database locations.
 
-### Pytest Options
+---
 
-```bash
-pytest --behaviorci          # Enable regression testing
-pytest --behaviorci-record   # Record/update snapshots
-pytest --behaviorci-update   # Update failing snapshots
-pytest --behaviorci-db PATH  # Custom database path
-```
+## Advanced Usage
 
-### Decorator Options
+### Handling Non-Deterministic Outputs
+
+Some outputs contain timestamps, random IDs, or dates. Handle these by normalizing inputs or mocking:
 
 ```python
-@behavior(
-    "my_behavior",
-    threshold=0.85,                    # Similarity threshold
-    must_contain=["helpful", "safe"],  # Required content
-    must_not_contain=["harmful"]       # Forbidden content
-)
+from unittest.mock import patch
+from datetime import datetime
+
+@behavior("daily_summary")
+def test_daily_summary():
+    with patch('myapp.get_today', return_value=datetime(2024, 1, 15)):
+        return generate_daily_summary()  # Now deterministic
 ```
+
+### Custom Thresholds Per Test
+
+```python
+# High variance allowed (creative writing)
+@behavior("poem_generator", threshold=0.75)
+def test_poem():
+    return generate_poem("love")
+
+# Strict consistency (structured data)
+@behavior("json_formatter", threshold=0.95, must_contain=["{", "}"])
+def test_json():
+    return format_as_json(data)
+```
+
+### Parallel Execution
+
+BehaviorCI supports `pytest-xdist`:
+
+```bash
+pip install pytest-xdist
+pytest --behaviorci -n 4  # 4 parallel workers
+```
+
+WAL mode ensures no database locking.
+
+---
 
 ## Architecture
 
 ```
 behaviorci/
-├── api.py        # @behavior decorator + return capture
-├── plugin.py     # pytest hooks (core engine)
-├── storage.py    # SQLite + BLOB serialization
-├── embedder.py   # sentence-transformers wrapper
-├── comparator.py # Layer 0 (lexical) + Layer 1 (semantic)
-├── cli.py        # Typer CLI wrapper
-├── models.py     # Pydantic models
-└── exceptions.py # Error classes
+├── api.py           # @behavior decorator, input serialization
+├── plugin.py        # pytest hooks (collection, execution, reporting)
+├── storage.py       # SQLite with WAL, singleton pattern, thread-local
+├── embedder.py      # sentence-transformers wrapper (local, offline)
+├── comparator.py    # Layer 0 (lexical) + Layer 1 (semantic)
+├── cli.py           # Typer-based CLI
+├── models.py        # Pydantic models (Snapshot, ComparisonResult)
+└── exceptions.py    # Structured error hierarchy
 ```
 
-### Evaluation Pipeline
+**Design Principles**:
+1. **Local-first**: No API keys, no cloud calls, works offline
+2. **pytest-native**: No separate workflow, integrates with existing tests
+3. **Deterministic-enough**: Handles FP32 embedding variance via tolerance bands
+4. **Production-hardened**: WAL mode, singleton storage, thread-safe
 
-**Layer 0: Lexical (fast fail)**
-- `must_contain`: All substrings must exist
-- `must_not_contain`: Safety violations
-- If failed: Immediate failure, skip embedding
+---
 
-**Layer 1: Semantic (core)**
-1. Load snapshot by ID
-2. Compute embedding of current output
-3. Cosine similarity vs stored embedding
-4. Variance-aware threshold adjustment
+## Comparison with Alternatives
 
-### Variance-Aware Thresholds
+| Tool | Approach | CI Integration | Local/Cloud | Best For |
+|------|----------|----------------|-------------|----------|
+| **BehaviorCI** | Snapshot + embeddings | pytest-native | Local | Regression testing, CI safety |
+| Promptfoo | Prompt A/B testing | CLI-first | Cloud option | Prompt iteration, evals |
+| DeepEval | Metrics-based | pytest plugin | Cloud | LLM evaluation, scoring |
+| LangSmith | Observability | Separate UI | Cloud-only | Debugging, tracing |
 
-```python
-history = storage.get_similarity_history(snapshot_id, limit=5)
-if len(history) >= 3:
-    mean = np.mean(history)
-    std = np.std(history)
-    effective_threshold = max(base_threshold, mean - 2*std)
-```
+**BehaviorCI is the only tool that treats LLM outputs like Jest snapshots**: record once, compare forever, fail on drift.
 
-Different inputs under the same behavior_id have separate histories.
+---
 
-## Design Principles
+## Troubleshooting
 
-1. **Pytest-native**: No separate workflow, runs via `pytest`
-2. **Local-first**: Uses local embedding model (sentence-transformers)
-3. **Deterministic-enough**: Handles embedding noise via tolerance
-4. **Adoption-first**: 1-line integration per test
-5. **Strict constraints**: JSON-serializable inputs only
+### "database is locked" errors
 
-## Requirements
+**Cause**: Multiple processes writing without WAL mode.  
+**Fix**: Upgrade to BehaviorCI ≥0.1.1 (WAL mode enabled by default).
 
-- Python 3.8+
-- pytest 7.0+
-- sentence-transformers 2.0+
-- numpy 1.20+
-- pydantic 2.0+
+### "No snapshot found" in CI
 
-## Testing
+**Cause**: New test added, snapshot not committed.  
+**Fix**: Use `--behaviorci-record-missing` flag in CI.
+
+### High similarity but test fails
+
+**Cause**: `must_contain` or `must_not_contain` lexical checks.  
+**Fix**: Check error message for "Missing required" or "Found forbidden".
+
+### Embedding model download slow
+
+**Cause**: First run downloads 22MB from HuggingFace.  
+**Fix**: Cache `~/.cache/torch/sentence_transformers` in CI.
+
+---
+
+## Contributing
+
+We welcome contributions! See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
+
+**Development setup**:
 
 ```bash
-# Run BehaviorCI self-tests
-pytest tests/test_behaviorci.py -v
-
-# Run example tests
-pytest tests/examples/test_app.py --behaviorci-record
-pytest tests/examples/test_app.py --behaviorci
+git clone https://github.com/0-uddeshya-0/BehaviorCI.git
+cd BehaviorCI
+pip install -e ".[dev]"
+pytest tests/ -v
 ```
 
 ## License
 
-MIT License
+MIT License. See [LICENSE](LICENSE).
+
+---
+
+<p align="center">
+  <strong>Star ⭐ if this saved your production deployment.</strong><br>
+  <a href="https://github.com/0-uddeshya-0/BehaviorCI/issues">Report issues</a> • 
+  <a href="https://github.com/0-uddeshya-0/BehaviorCI/discussions">Discussions</a>
+</p>
