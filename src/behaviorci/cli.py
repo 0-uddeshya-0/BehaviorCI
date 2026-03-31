@@ -22,16 +22,7 @@ def _run_pytest(
     pytest_args: Optional[list] = None,
     directory: Optional[str] = None
 ) -> int:
-    """Run pytest with BehaviorCI options.
-
-    Args:
-        behaviorci_args: BehaviorCI-specific pytest arguments
-        pytest_args: Additional pytest arguments
-        directory: Directory to run tests from
-
-    Returns:
-        Exit code from pytest
-    """
+    """Run pytest with BehaviorCI options."""
     cmd = ["pytest"] + behaviorci_args + (pytest_args or [])
 
     if directory:
@@ -58,12 +49,9 @@ def record(
 ):
     """Record new behavioral snapshots (creates or overwrites)."""
     behaviorci_args = ["--behaviorci-record"]
-
     if db_path:
         behaviorci_args.extend(["--behaviorci-db", db_path])
-
-    exit_code = _run_pytest(behaviorci_args, pytest_args, directory)
-    sys.exit(exit_code)
+    sys.exit(_run_pytest(behaviorci_args, pytest_args, directory))
 
 
 @app.command()
@@ -74,12 +62,9 @@ def check(
 ):
     """Run behavioral regression tests (fails on behavior change)."""
     behaviorci_args = ["--behaviorci"]
-
     if db_path:
         behaviorci_args.extend(["--behaviorci-db", db_path])
-
-    exit_code = _run_pytest(behaviorci_args, pytest_args, directory)
-    sys.exit(exit_code)
+    sys.exit(_run_pytest(behaviorci_args, pytest_args, directory))
 
 
 @app.command()
@@ -90,12 +75,9 @@ def update(
 ):
     """Update failing snapshots (accept new behavior)."""
     behaviorci_args = ["--behaviorci-update"]
-
     if db_path:
         behaviorci_args.extend(["--behaviorci-db", db_path])
-
-    exit_code = _run_pytest(behaviorci_args, pytest_args, directory)
-    sys.exit(exit_code)
+    sys.exit(_run_pytest(behaviorci_args, pytest_args, directory))
 
 
 @app.command()
@@ -106,12 +88,9 @@ def record_missing(
 ):
     """Record missing snapshots (CI workflow - checks existing, records new)."""
     behaviorci_args = ["--behaviorci-record-missing"]
-
     if db_path:
         behaviorci_args.extend(["--behaviorci-db", db_path])
-
-    exit_code = _run_pytest(behaviorci_args, pytest_args, directory)
-    sys.exit(exit_code)
+    sys.exit(_run_pytest(behaviorci_args, pytest_args, directory))
 
 
 @app.command()
@@ -119,9 +98,6 @@ def stats(
     db_path: Annotated[Optional[str], typer.Option("--db", help="Path to BehaviorCI database")] = None,
 ):
     """Show database statistics."""
-    # FIX: Use Storage abstraction via get_storage() instead of opening a raw
-    # sqlite3 connection directly. This keeps the DB path logic in one place
-    # and ensures consistent connection settings (WAL, busy_timeout, etc.).
     storage = get_storage(db_path)
     stats_data = storage.get_stats()
 
@@ -133,7 +109,6 @@ def stats(
 
     if stats_data['snapshots'] > 0:
         typer.echo("\nSnapshots per behavior:")
-        # Retrieve per-behavior counts via the storage connection
         conn = storage._get_connection()
         rows = conn.execute(
             "SELECT behavior_id, COUNT(*) as count FROM snapshots GROUP BY behavior_id"
@@ -157,149 +132,13 @@ def clear(
 
     if not force:
         confirm = typer.confirm(
-            f"Delete {stats_data['snapshots']} snapshots and {stats_data['history_records']} history records?"
+            f"Delete {stats_data['snapshots']} snapshots and "
+            f"{stats_data['history_records']} history records?"
         )
         if not confirm:
             typer.echo("Aborted.")
             return
 
-    storage.clear_all()
-    typer.echo("Database cleared.")
-
-
-def main():
-    """Entry point for the CLI."""
-    app()
-
-
-if __name__ == "__main__":
-    main()    if directory:
-        cmd.append(directory)
-    
-    typer.echo(f"Running: {' '.join(cmd)}")
-    
-    try:
-        result = subprocess.run(cmd, check=False)
-        return result.returncode
-    except FileNotFoundError:
-        typer.echo("Error: pytest not found. Install with: pip install pytest", err=True)
-        return 1
-    except KeyboardInterrupt:
-        typer.echo("\nInterrupted.")
-        return 130
-
-
-@app.command()
-def record(
-    directory: Annotated[Optional[str], typer.Argument(help="Test directory")] = None,
-    pytest_args: Annotated[Optional[list[str]], typer.Argument(help="Additional pytest arguments")] = None,
-    db_path: Annotated[Optional[str], typer.Option("--db", help="Path to BehaviorCI database")] = None,
-):
-    """Record new behavioral snapshots (creates or overwrites)."""
-    behaviorci_args = ["--behaviorci-record"]
-    
-    if db_path:
-        behaviorci_args.extend(["--behaviorci-db", db_path])
-    
-    exit_code = _run_pytest(behaviorci_args, pytest_args, directory)
-    sys.exit(exit_code)
-
-
-@app.command()
-def check(
-    directory: Annotated[Optional[str], typer.Argument(help="Test directory")] = None,
-    pytest_args: Annotated[Optional[list[str]], typer.Argument(help="Additional pytest arguments")] = None,
-    db_path: Annotated[Optional[str], typer.Option("--db", help="Path to BehaviorCI database")] = None,
-):
-    """Run behavioral regression tests (fails on behavior change)."""
-    behaviorci_args = ["--behaviorci"]
-    
-    if db_path:
-        behaviorci_args.extend(["--behaviorci-db", db_path])
-    
-    exit_code = _run_pytest(behaviorci_args, pytest_args, directory)
-    sys.exit(exit_code)
-
-
-@app.command()
-def update(
-    directory: Annotated[Optional[str], typer.Argument(help="Test directory")] = None,
-    pytest_args: Annotated[Optional[list[str]], typer.Argument(help="Additional pytest arguments")] = None,
-    db_path: Annotated[Optional[str], typer.Option("--db", help="Path to BehaviorCI database")] = None,
-):
-    """Update failing snapshots (accept new behavior)."""
-    behaviorci_args = ["--behaviorci-update"]
-    
-    if db_path:
-        behaviorci_args.extend(["--behaviorci-db", db_path])
-    
-    exit_code = _run_pytest(behaviorci_args, pytest_args, directory)
-    sys.exit(exit_code)
-
-
-@app.command()
-def record_missing(
-    directory: Annotated[Optional[str], typer.Argument(help="Test directory")] = None,
-    pytest_args: Annotated[Optional[list[str]], typer.Argument(help="Additional pytest arguments")] = None,
-    db_path: Annotated[Optional[str], typer.Option("--db", help="Path to BehaviorCI database")] = None,
-):
-    """Record missing snapshots (CI workflow - checks existing, records new)."""
-    behaviorci_args = ["--behaviorci-record-missing"]
-    
-    if db_path:
-        behaviorci_args.extend(["--behaviorci-db", db_path])
-    
-    exit_code = _run_pytest(behaviorci_args, pytest_args, directory)
-    sys.exit(exit_code)
-
-
-@app.command()
-def stats(
-    db_path: Annotated[Optional[str], typer.Option("--db", help="Path to BehaviorCI database")] = None,
-):
-    """Show database statistics.
-    
-    HIGH-002 FIX: Uses storage.get_behavior_summary() instead of raw SQLite.
-    This ensures proper singleton usage and WAL mode settings.
-    """
-    storage = get_storage(db_path)
-    stats_data = storage.get_stats()
-    
-    typer.echo("BehaviorCI Database Statistics")
-    typer.echo("=" * 30)
-    typer.echo(f"Total snapshots: {stats_data['snapshots']}")
-    typer.echo(f"Unique behaviors: {stats_data['behaviors']}")
-    typer.echo(f"History records: {stats_data['history_records']}")
-    
-    if stats_data['snapshots'] > 0:
-        typer.echo("\nSnapshots per behavior:")
-        # HIGH-002: Use Storage method instead of raw SQLite
-        summary = storage.get_behavior_summary()
-        for behavior_id, count, last_run in summary:
-            typer.echo(f"  {behavior_id}: {count}")
-
-
-@app.command()
-def clear(
-    db_path: Annotated[Optional[str], typer.Option("--db", help="Path to BehaviorCI database")] = None,
-    force: Annotated[bool, typer.Option("--force", help="Skip confirmation")] = False,
-):
-    """Clear all snapshots (USE WITH CAUTION)."""
-    storage = get_storage(db_path)
-    stats_data = storage.get_stats()
-    
-    if stats_data['snapshots'] == 0:
-        typer.echo("Database is already empty.")
-        return
-    
-    if not force:
-        confirm = typer.confirm(
-            f"Delete {stats_data['snapshots']} snapshots and {stats_data['history_records']} history records?"
-        )
-        if not confirm:
-            typer.echo("Aborted.")
-            return
-    
     storage.clear_all()
     typer.echo("Database cleared.")
 
