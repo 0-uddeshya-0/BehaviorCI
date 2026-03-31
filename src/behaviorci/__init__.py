@@ -10,12 +10,13 @@ from .exceptions import (
     ComparisonError,
     ConfigurationError,
     ReplayError,
+    ModelMismatchError,  # TASK 1 (v0.2): Export new exception
     ModelMismatchWarning,
 )
 from .models import Snapshot, BehaviorConfig, ComparisonResult, CapturedBehavior
 from .storage import get_storage, reset_storage, reset_all_storage
 
-__version__ = "0.1.0"
+__version__ = "0.2.0"  # TASK 1-5 (v0.2): Version bump
 __all__ = [
     # Version
     "__version__",
@@ -33,6 +34,7 @@ __all__ = [
     "ComparisonError",
     "ConfigurationError",
     "ReplayError",
+    "ModelMismatchError",  # TASK 1 (v0.2)
     "ModelMismatchWarning",
     # Models
     "Snapshot",
