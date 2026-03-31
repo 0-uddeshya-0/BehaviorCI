@@ -1,4 +1,16 @@
-"""Test for regression detection demonstration."""
+"""Demonstration of regression detection.
+
+NOTE: This file must be run IN ISOLATION from test_app.py.
+It intentionally simulates a behavioral regression by returning a different
+output than what the baseline snapshot would contain.
+
+Run as a standalone demo:
+    pytest tests/examples/test_regression.py --behaviorci -v
+
+Do NOT run alongside test_app.py in the same pytest session — the
+behavior IDs here are distinct, but the intent is to show a regression
+scenario, not to co-exist with a passing baseline in the same suite.
+"""
 
 import pytest
 from behaviorci import behavior
@@ -12,18 +24,21 @@ def fresh_llm():
     yield
 
 
-# HIGH-003 FIX: Use unique behavior_id to avoid conflict with test_app.py
-# The duplicate behavior_id would cause ConfigurationError with FIX-005
 @behavior("refund_classifier_regression_demo", threshold=0.85)
 def test_refund_classification_regression():
-    """This test simulates a behavioral regression.
-    
-    The original test in test_app.py returns 'REFUND_REQUEST' but this 
-    one returns 'BILLING_QUESTION' to simulate a regression in the LLM behavior.
-    
-    NOTE: Uses unique behavior_id to avoid conflict with FIX-005 validation.
+    """Simulates a behavioral regression for demonstration purposes.
+
+    A baseline snapshot for "refund_classifier_regression_demo" would store
+    "REFUND_REQUEST". This test returns "BILLING_QUESTION" to trigger a
+    regression failure when run with --behaviorci.
+
+    Workflow:
+        # Record baseline (first time only):
+        pytest tests/examples/test_regression.py --behaviorci-record
+
+        # Simulate regression — this should FAIL:
+        pytest tests/examples/test_regression.py --behaviorci
     """
-    llm = get_llm()
-    # Simulate regression: return different classification
-    result = "BILLING_QUESTION"  # Changed from REFUND_REQUEST
+    # Simulate regression: classifier returns wrong category
+    result = "BILLING_QUESTION"  # Was originally REFUND_REQUEST
     return result
