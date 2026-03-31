@@ -1,0 +1,48 @@
+# SQLite artifacts (WAL mode creates these)
+*.db-wal
+*.db-shm
+:memory:
+:memory:-shm
+
+# BehaviorCI runtime data (opt-in to commit .db, but never WAL files)
+.behaviorci/*.db-wal
+.behaviorci/*.db-shm
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+*.egg-info/
+dist/
+build/
+.eggs/
+*.egg
+*.manifest
+*.spec
+
+# Virtual environments
+venv/
+.venv/
+env/
+ENV/
+
+# Test / coverage
+.coverage
+htmlcov/
+.tox/
+.pytest_cache/
+.mypy_cache/
+.dmypy.json
+
+# IDEs
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
