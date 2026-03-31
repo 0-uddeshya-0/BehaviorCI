@@ -1,71 +1,98 @@
-"""Test for CRITICAL-001: Single test execution (not double).
+"""Test for CRITICAL-001: Single test execution.
 
 CRITICAL-001: pytest_runtest_call was calling item.runtest() manually,
 but pytest's own runner also calls it. Result: every @behavior test ran twice.
 
-FIX: Converted to hookwrapper=True with yield to let pytest run test once.
-
-VERIFICATION: This test verifies the hook implementation is correct.
+FIX: Removed pytest_runtest_call entirely (FIX-006). The @behavior decorator
+in api.py stores the return value as a function attribute during normal pytest
+execution. plugin.py reads it in pytest_runtest_makereport after pytest's own
+runner completes the call phase — no manual runtest() needed.
 """
 
-import pytest
+
+def test_pytest_runtest_call_is_absent():
+    """Verify pytest_runtest_call does NOT exist in the plugin.
+
+    WHY: CRITICAL-001 fix removed the function entirely to prevent
+    double-execution. If it exists, every @behavior test runs twice.
+
+    VERIFIED: plugin.py has no pytest_runtest_call function.
+    """
+    from behaviorci import plugin
+
+    assert not hasattr(plugin, 'pytest_runtest_call'), (
+        "CRITICAL-001 NOT FIXED: pytest_runtest_call still exists in plugin.py. "
+        "This causes every @behavior test to execute twice (double LLM calls). "
+        "Remove the function — result capture happens in pytest_runtest_makereport."
+    )
 
 
-def test_hookwrapper_decorator_present():
-    """Verify pytest_runtest_call uses hookwrapper=True.
-    
-    WHY: CRITICAL-001 fix - The hook must use hookwrapper=True to let
-    pytest run the test normally, then capture the result afterwards.
-    
-    VERIFIED: The plugin module has hookwrapper decorator.
+def test_makereport_reads_result_attribute():
+    """Verify pytest_runtest_makereport reads _behaviorci_result from function attribute.
+
+    WHY: This is the correct pattern after FIX-006. Instead of manually running
+    the test and capturing output, we read the attribute that the @behavior
+    wrapper sets during normal pytest execution.
+
+    VERIFIED: Source of pytest_runtest_makereport calls getattr(..., '_behaviorci_result').
     """
     import inspect
     from behaviorci import plugin
-    
-    # Check that pytest_runtest_call is defined
-    assert hasattr(plugin, 'pytest_runtest_call'), "pytest_runtest_call not found"
-    
-    # Check source code for @pytest.hookimpl(hookwrapper=True)
-    source = inspect.getsource(plugin.pytest_runtest_call)
-    assert "@pytest.hookimpl(hookwrapper=True)" in source or \
-           "@pytest.hookimpl(tryfirst=True, hookwrapper=True)" in source, \
-        "pytest_runtest_call must use @pytest.hookimpl(hookwrapper=True)"
+
+    assert hasattr(plugin, 'pytest_runtest_makereport'), (
+        "pytest_runtest_makereport must exist — it is the sole result-capture hook."
+    )
+
+    source = inspect.getsource(plugin.pytest_runtest_makereport)
+
+    assert "_behaviorci_result" in source, (
+        "pytest_runtest_makereport must read _behaviorci_result from the function attribute."
+    )
+
+    assert "_behaviorci_input_json" in source, (
+        "pytest_runtest_makereport must read _behaviorci_input_json from the function attribute."
+    )
 
 
-def test_no_manual_runtest_call():
-    """Verify the hook doesn't manually call item.runtest().
-    
-    WHY: CRITICAL-001 fix - Manual runtest() call caused double execution.
-    The hook should use yield to let pytest run the test.
-    
-    VERIFIED: Source code inspection shows no item.runtest() call.
+def test_makereport_is_hookwrapper():
+    """Verify pytest_runtest_makereport uses hookwrapper=True.
+
+    WHY: The hookwrapper pattern (yield) is required to intercept pytest's
+    report generation and modify the outcome on regression failure.
     """
     import inspect
     from behaviorci import plugin
-    
-    source = inspect.getsource(plugin.pytest_runtest_call)
-    
-    # Should NOT contain manual item.runtest() call (excluding docstring/comments)
-    # Look for actual call pattern (not in quotes/comments)
-    lines = source.split('\n')
-    code_lines = []
-    in_docstring = False
-    for line in lines:
-        stripped = line.strip()
-        if '"""' in stripped:
-            in_docstring = not in_docstring
-            continue
-        if not in_docstring and not stripped.startswith('#'):
-            code_lines.append(line)
-    
+
+    source = inspect.getsource(plugin.pytest_runtest_makereport)
+
+    assert "hookwrapper=True" in source, (
+        "pytest_runtest_makereport must use @pytest.hookimpl(..., hookwrapper=True)."
+    )
+
+    assert "yield" in source, (
+        "pytest_runtest_makereport must yield to let pytest generate the base report."
+    )
+
+
+def test_no_manual_runtest_anywhere():
+    """Verify item.runtest() is never called manually in the plugin.
+
+    WHY: Any manual call to item.runtest() in a non-firstresult hook causes
+    double execution. pytest's own runner handles this automatically.
+    """
+    import inspect
+    from behaviorci import plugin
+
+    source = inspect.getsource(plugin)
+
+    # Strip comments to avoid false positives from explanatory text
+    code_lines = [
+        line for line in source.split('\n')
+        if line.strip() and not line.strip().startswith('#')
+    ]
     code = '\n'.join(code_lines)
-    assert "item.runtest()" not in code, \
-        "CRITICAL-001 NOT FIXED: Manual item.runtest() call found"
-    
-    # SHOULD contain yield to let pytest run the test
-    assert "yield" in source, \
-        "CRITICAL-001 NOT FIXED: Missing yield for hookwrapper"
-    
-    # SHOULD check outcome.excinfo for exceptions
-    assert "outcome.excinfo" in source, \
-        "Should check outcome.excinfo for exception handling"
+
+    assert 'item.runtest()' not in code, (
+        "CRITICAL-001: Manual item.runtest() call found in plugin.py. "
+        "This causes double execution. Remove it."
+    )
