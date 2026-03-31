@@ -43,6 +43,15 @@ __all__ = [
     "get_storage",
     "reset_storage",
     "reset_all_storage",
+]    # Models
+    "Snapshot",
+    "BehaviorConfig",
+    "ComparisonResult",
+    "CapturedBehavior",
+    # Storage utilities
+    "get_storage",
+    "reset_storage",
+    "reset_all_storage",
 ]    "BehaviorConfig",
     "ComparisonResult",
     "CapturedBehavior",
