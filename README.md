@@ -1,7 +1,3 @@
-<p align="center">
-  <img src="https://raw.githubusercontent.com/0-uddeshya-0/BehaviorCI/main/assets/logo.svg" width="120" alt="BehaviorCI Logo">
-</p>
-
 <h1 align="center">BehaviorCI</h1>
 
 <p align="center">
