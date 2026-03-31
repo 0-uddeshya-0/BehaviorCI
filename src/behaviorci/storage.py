@@ -8,6 +8,11 @@ BUG FIXES APPLIED:
            Previously it was set only on the init connection (which is immediately
            closed), so thread-local connections had no timeout and could still
            produce "database is locked" errors under concurrent load.
+- FIX-008: :memory: path is now handled as a true SQLite in-memory database.
+           Previously, Storage(":memory:") would call Path(":memory:").parent.mkdir()
+           and sqlite3.connect(":memory:") under WAL mode produced literal files
+           named ":memory:" and ":memory:-shm" on disk. Now the path is detected
+           and directory creation + WAL init are skipped for in-memory databases.
 """
 
 import sqlite3
@@ -48,6 +53,8 @@ CREATE INDEX IF NOT EXISTS idx_behavior ON snapshots(behavior_id);
 CREATE INDEX IF NOT EXISTS idx_snapshot_history ON similarity_history(snapshot_id);
 """
 
+# Sentinel value recognised by SQLite as a true in-memory database
+_MEMORY_PATH = ":memory:"
 
 # Module-level singleton storage
 # WHY: Prevents connection exhaustion with 1000+ tests (BUG-003)
@@ -73,6 +80,7 @@ def get_storage(db_path: Optional[str] = None) -> 'Storage':
 
     Args:
         db_path: Path to SQLite database. Defaults to .behaviorci/behaviorci.db
+                 Pass ":memory:" for a true in-memory database (tests only).
 
     Returns:
         Storage singleton instance for the given path
@@ -80,8 +88,10 @@ def get_storage(db_path: Optional[str] = None) -> 'Storage':
     if db_path is None:
         db_path = os.path.join('.behaviorci', 'behaviorci.db')
 
-    # Normalize path for consistent lookup
-    db_path = str(Path(db_path).resolve())
+    # Normalise path for consistent lookup, but leave :memory: unchanged —
+    # Path(":memory:").resolve() produces an incorrect filesystem path.
+    if db_path != _MEMORY_PATH:
+        db_path = str(Path(db_path).resolve())
 
     with _storage_lock:
         if db_path not in _storage_instances:
@@ -97,7 +107,9 @@ def reset_storage(db_path: Optional[str] = None) -> None:
     """
     if db_path is None:
         db_path = os.path.join('.behaviorci', 'behaviorci.db')
-    db_path = str(Path(db_path).resolve())
+
+    if db_path != _MEMORY_PATH:
+        db_path = str(Path(db_path).resolve())
 
     with _storage_lock:
         if db_path in _storage_instances:
@@ -138,12 +150,20 @@ class Storage:
 
         Args:
             db_path: Path to SQLite database. Defaults to .behaviorci/behaviorci.db
+                     Pass ":memory:" for a true in-memory database (tests only).
         """
         if db_path is None:
             db_path = os.path.join('.behaviorci', 'behaviorci.db')
 
+        self._is_memory = (db_path == _MEMORY_PATH)
         self.db_path = Path(db_path)
-        self.db_path.parent.mkdir(parents=True, exist_ok=True)
+
+        # FIX-008: Skip directory creation for :memory: — it is not a real path.
+        # Previously this called Path(":memory:").parent.mkdir() which created
+        # a "." directory entry, and sqlite3.connect(":memory:") under WAL mode
+        # produced literal ":memory:" and ":memory:-shm" files on disk.
+        if not self._is_memory:
+            self.db_path.parent.mkdir(parents=True, exist_ok=True)
 
         # Thread-local storage for connections (BUG-003)
         self._local = threading.local()
@@ -161,7 +181,9 @@ class Storage:
                  the init connection. Without this, thread-local connections had
                  no timeout and could still deadlock under concurrent writes.
 
-        VERIFIED BY: tests/test_bug_002_concurrency.py, tests/test_bug_003_singleton.py
+        NOTE: For :memory: databases each thread gets its own independent
+              in-memory database. This is intentional — it matches test
+              isolation expectations and is consistent with SQLite's behaviour.
 
         Returns:
             Thread-local SQLite connection
@@ -174,11 +196,18 @@ class Storage:
             )
             self._local.connection.row_factory = sqlite3.Row
             # FIX-007: These PRAGMAs must be set on every new connection.
-            # journal_mode=WAL persists in the DB file so it's already active,
+            # journal_mode=WAL persists in the DB file so it is already active,
             # but synchronous and busy_timeout are per-connection and must be
             # re-applied every time a new thread-local connection is created.
             self._local.connection.execute("PRAGMA synchronous=NORMAL")
             self._local.connection.execute("PRAGMA busy_timeout=5000")
+
+            # For in-memory databases the schema must also be created per
+            # connection because each thread gets a fresh in-memory DB.
+            if self._is_memory:
+                self._local.connection.executescript(SCHEMA)
+                self._local.connection.commit()
+
         return self._local.connection
 
     def _init_db(self) -> None:
@@ -194,11 +223,18 @@ class Storage:
 
         NOTE: journal_mode=WAL is a database-level persistent setting.
               synchronous and busy_timeout are per-connection (see _get_connection).
+              WAL mode is a no-op for :memory: databases and is skipped.
 
         RISKS: WAL creates .db-wal and .db-shm files that must be handled in CI.
 
         VERIFIED BY: tests/test_bug_002_concurrency.py
         """
+        # FIX-008: :memory: databases don't support WAL mode and don't need it —
+        # they are single-process by definition. Schema is created per-connection
+        # in _get_connection() instead.
+        if self._is_memory:
+            return
+
         try:
             conn = sqlite3.connect(str(self.db_path))
             conn.row_factory = sqlite3.Row
@@ -237,7 +273,6 @@ class Storage:
         """
         snapshot_id = compute_snapshot_id(behavior_id, input_json)
 
-        # Ensure embedding is float32 and normalized
         if embedding.dtype != np.float32:
             embedding = embedding.astype(np.float32)
 
@@ -252,7 +287,6 @@ class Storage:
             conn = self._get_connection()
             conn.execute("DELETE FROM snapshots WHERE id = ?", (snapshot_id,))
             conn.execute("DELETE FROM similarity_history WHERE snapshot_id = ?", (snapshot_id,))
-
             conn.execute(
                 """
                 INSERT INTO snapshots
