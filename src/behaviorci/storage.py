@@ -27,7 +27,6 @@ import numpy as np
 
 from .models import Snapshot, SimilarityRecord
 from .exceptions import StorageError, SnapshotNotFoundError
-from behaviorci.storage import reset_all_storage, get_storage
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS snapshots (
