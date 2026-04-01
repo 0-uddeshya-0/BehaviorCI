@@ -10,6 +10,7 @@ from datetime import datetime
 
 import behaviorci
 from behaviorci.storage import reset_all_storage, get_storage
+from tests.mock_embedder import MockEmbedder
 from behaviorci import behavior
 from behaviorci.api import serialize_inputs, get_behavior_config, is_behavior_test
 from behaviorci.storage import Storage, compute_snapshot_id
