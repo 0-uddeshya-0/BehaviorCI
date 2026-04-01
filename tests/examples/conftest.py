@@ -12,7 +12,7 @@ def mock_embedder():
     mock = MockEmbedder()
     
     # Patch the embedder module
-    with patch('behaviorci.embedder._global_embedder', mock):
+    with patch('behaviorci.embedder._embedder_cache', {'sentence-transformers/all-MiniLM-L6-v2': mock}):
         with patch('behaviorci.embedder.Embedder', MockEmbedder):
             with patch('behaviorci.comparator.get_embedder', lambda: mock):
                 yield mock
