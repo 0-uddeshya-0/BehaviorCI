@@ -2,23 +2,25 @@
 
 import numpy as np
 import threading
-from typing import List, Union
+from typing import List, Union, Dict
 import warnings
 
 from .exceptions import EmbeddingError
 
 
-# HIGH-001 FIX: Thread lock for embedder singleton
+# HIGH-001 FIX: Thread lock for embedder singleton cache
 # WHY: Multiple threads could create multiple Embedder instances
-# APPROACH: Use threading.Lock like storage.py
+# APPROACH: Dictionary cache with thread-safe access (supports multiple models)
 # VERIFIED BY: tests/test_high_001_thread_safe_embedder.py
 _embedder_lock = threading.Lock()
+_embedder_cache: Dict[str, 'Embedder'] = {}
+DEFAULT_MODEL_NAME = 'sentence-transformers/all-MiniLM-L6-v2'
 
 
 class Embedder:
     """Local embedding model wrapper using sentence-transformers."""
     
-    DEFAULT_MODEL = 'sentence-transformers/all-MiniLM-L6-v2'
+    DEFAULT_MODEL = DEFAULT_MODEL_NAME
     EMBEDDING_DIM = 384
     
     def __init__(self, model_name: str = None):
@@ -69,18 +71,15 @@ class Embedder:
             raise EmbeddingError("Cannot embed empty text list")
         
         try:
-            # Compute embeddings
             embeddings = self._model.encode(
                 texts,
                 convert_to_numpy=True,
-                normalize_embeddings=True  # L2 normalization
+                normalize_embeddings=True
             )
             
-            # Ensure float32
             if embeddings.dtype != np.float32:
                 embeddings = embeddings.astype(np.float32)
             
-            # Return single vector if single input
             if single_input:
                 return embeddings[0]
             return embeddings
@@ -89,40 +88,17 @@ class Embedder:
             raise EmbeddingError(f"Embedding computation failed: {e}")
     
     def embed_single(self, text: str) -> np.ndarray:
-        """Compute embedding for a single text.
-        
-        Args:
-            text: Text to embed
-            
-        Returns:
-            Normalized embedding vector (384-dim float32)
-        """
+        """Compute embedding for a single text."""
         return self.embed(text)
     
     def compute_similarity(self, a: np.ndarray, b: np.ndarray) -> float:
-        """Compute cosine similarity between two normalized embeddings.
-        
-        Args:
-            a: First embedding vector (normalized)
-            b: Second embedding vector (normalized)
-            
-        Returns:
-            Cosine similarity score (-1 to 1, typically 0 to 1 for similar texts)
-        """
-        # Both vectors should be normalized, so dot product = cosine similarity
+        """Compute cosine similarity between two normalized embeddings."""
         similarity = float(np.dot(a, b))
-        
-        # Clamp to valid range due to floating point errors
         similarity = max(-1.0, min(1.0, similarity))
-        
         return similarity
     
     def get_dimension(self) -> int:
-        """Get embedding dimension.
-        
-        Returns:
-            Dimension of embedding vectors
-        """
+        """Get embedding dimension."""
         self._load_model()
         return self._embedding_dim
     
@@ -132,35 +108,29 @@ class Embedder:
         return self._model is not None
 
 
-# Global embedder instance for reuse
-_global_embedder: Embedder = None
-
-
 def get_embedder(model_name: str = None) -> Embedder:
-    """Get or create global embedder instance.
+    """Get or create cached embedder instance for specific model.
     
-    HIGH-001 FIX: Thread-safe singleton using _embedder_lock.
-    
-    WHY: Without lock, multiple threads could simultaneously check
-    _global_embedder is None and create multiple instances.
+    HIGH-001 FIX: Dictionary cache ensures same model returns same instance.
     
     Args:
         model_name: Model name (uses default if not specified)
         
     Returns:
-        Embedder instance
-        
-    VERIFIED BY: tests/test_high_001_thread_safe_embedder.py
+        Embedder instance (cached per model)
     """
-    global _global_embedder
+    model_name = model_name or DEFAULT_MODEL_NAME
+    
     with _embedder_lock:
-        if _global_embedder is None or (model_name and _global_embedder.model_name != model_name):
-            _global_embedder = Embedder(model_name)
-        return _global_embedder
+        if model_name not in _embedder_cache:
+            _embedder_cache[model_name] = Embedder(model_name)
+        return _embedder_cache[model_name]
 
 
-def reset_embedder() -> None:
-    """Reset global embedder (useful for testing)."""
-    global _global_embedder
+def reset_embedder(model_name: str = None) -> None:
+    """Reset embedder cache (useful for testing)."""
     with _embedder_lock:
-        _global_embedder = None
+        if model_name:
+            _embedder_cache.pop(model_name, None)
+        else:
+            _embedder_cache.clear()
