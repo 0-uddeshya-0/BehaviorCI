@@ -7,11 +7,9 @@ BUG FIXES APPLIED:
 - BUG-003: Uses get_storage() singleton instead of direct Storage() instantiation
 - FIX-004: Added --behaviorci-record-missing flag for CI workflows
 - FIX-005: Validates behavior_id uniqueness at collection time
-- FIX-006: Removed pytest_runtest_call to prevent double-execution of test functions.
-           pytest_runtest_call is not a firstresult hook, so both our implementation
-           and pytest's default runner called item.runtest(), executing every LLM
-           call twice. We now read _behaviorci_result directly in makereport after
-           pytest's normal execution completes.
+- FIX-006: Removed pytest_runtest_call hook to prevent double-execution.
+           The previous implementation had a hook that called the test runner,
+           which conflicted with pytest's default runner causing duplicate executions.
 """
 
 import pytest
@@ -21,7 +19,7 @@ from typing import Optional, Dict
 
 from .api import get_behavior_config, serialize_inputs
 from .storage import get_storage, reset_all_storage
-from .embedder import get_embedder
+from .embedder import get_embedder, DEFAULT_MODEL_NAME
 from .comparator import Comparator
 from .exceptions import BehaviorCIError, SerializationError, ConfigurationError
 
@@ -63,11 +61,10 @@ def pytest_addoption(parser):
         default=None,
         help="Path to BehaviorCI database (default: .behaviorci/behaviorci.db)"
     )
-    # TASK 5 (v0.2): Add --behaviorci-model flag for custom embedding models
     group.addoption(
         "--behaviorci-model",
         action="store",
-        default=None,
+        default='sentence-transformers/all-MiniLM-L6-v2',  # FIX: Default model
         help="Embedding model name (default: sentence-transformers/all-MiniLM-L6-v2)"
     )
 
@@ -84,56 +81,30 @@ def pytest_configure(config):
     config.behaviorci_update = config.getoption("--behaviorci-update")
     config.behaviorci_record_missing = config.getoption("--behaviorci-record-missing")
     config.behaviorci_db_path = config.getoption("--behaviorci-db")
-    # TASK 5 (v0.2): Store model name in config
+    # FIX: Ensure model name is never None
     config.behaviorci_model = config.getoption("--behaviorci-model")
 
 
 def pytest_collection_modifyitems(config, items):
-    """Validate behavior tests during collection.
-
-    WHY: FIX-005 - Same behavior_id in different files/functions causes silent overwrites.
-         This is confusing and hard to debug.
-
-    NOTE: Parametrized tests (same function, different params) are ALLOWED because
-    they have different inputs and thus create different snapshots. The snapshot_id
-    is computed from behavior_id + input_json, so different inputs = different snapshots.
-
-    APPROACH: Validate uniqueness at collection time, fail fast with clear error.
-              Rejected: runtime check (too late, test already running)
-
-    RISKS: Slightly slower collection for large test suites.
-
-    VERIFIED BY: tests/test_fix_005_duplicate_id.py, tests/test_fix_013_parametrized.py
-    """
+    """Validate behavior tests during collection."""
     if not config.behaviorci_enabled:
         return
 
-    # Track seen behavior IDs with their function paths for uniqueness validation (FIX-005)
-    # Key: behavior_id, Value: (module_path, function_name) of first occurrence
     seen_ids: Dict[str, tuple] = {}
 
     for item in items:
-        # Check if test has @behavior decorator
         if hasattr(item.obj, '_behavior_config'):
             config_obj = item.obj._behavior_config
             behavior_id = config_obj.behavior_id
-
-            # Get the function path (module + function name, excluding parametrized suffix)
-            # For parametrized tests like test_foo[alpha], we extract test_foo
-            func_path = item.location[0]  # module path
-            func_name = item.location[2]  # function name (includes parametrized suffix)
-            # Remove parametrized suffix if present (e.g., test_foo[alpha] -> test_foo)
+            func_path = item.location[0]
+            func_name = item.location[2]
             if '[' in func_name:
                 func_name = func_name.split('[')[0]
             func_key = (func_path, func_name)
 
-            # FIX-005: Validate behavior_id uniqueness
-            # Allow same behavior_id for parametrized tests (same function, different params)
-            # because they have different inputs and create different snapshots
             if behavior_id in seen_ids:
                 other_func_key = seen_ids[behavior_id]
                 if other_func_key != func_key:
-                    # Different function with same behavior_id - this is an error
                     other_item = next(
                         (i for i in items
                          if hasattr(i.obj, '_behavior_config')
@@ -149,7 +120,6 @@ def pytest_collection_modifyitems(config, items):
             else:
                 seen_ids[behavior_id] = func_key
 
-            # Mark item for processing
             item.stash[CONFIG_KEY] = {
                 'behavior_id': behavior_id,
                 'threshold': config_obj.threshold,
@@ -158,30 +128,11 @@ def pytest_collection_modifyitems(config, items):
             }
 
 
-# NOTE: pytest_runtest_call is intentionally NOT implemented here.
-#
-# FIX-006: The previous implementation called item.runtest() inside
-# pytest_runtest_call, which is not a firstresult hook. This caused
-# pytest's own runner to ALSO call item.runtest(), executing every
-# @behavior test twice (double LLM calls).
-#
-# The @behavior decorator in api.py already stores the return value as
-# a function attribute (_behaviorci_result) during normal pytest execution.
-# We simply read that attribute in makereport below, after pytest's own
-# runner has completed the test call phase.
-
-
 @pytest.hookimpl(tryfirst=True, hookwrapper=True)
 def pytest_runtest_makereport(item, call):
-    """Generate report for behavior tests.
-
-    WHY: We read _behaviorci_result here (after pytest's normal call phase)
-         rather than in a separate hook. The @behavior wrapper in api.py
-         stores the result as a function attribute during test execution.
-    """
+    """Generate report for behavior tests."""
     outcome = yield
 
-    # Only process behavior tests after the call phase
     if CONFIG_KEY not in item.stash:
         return
 
@@ -190,7 +141,6 @@ def pytest_runtest_makereport(item, call):
 
     report = outcome.get_result()
 
-    # Skip if test already failed (e.g., exception in test body)
     if report.failed:
         return
 
@@ -198,8 +148,6 @@ def pytest_runtest_makereport(item, call):
     if config is None:
         return
 
-    # Read result directly from function attribute set by the @behavior wrapper.
-    # This is safe because makereport runs after pytest's call phase completes.
     output_text = getattr(item.obj, '_behaviorci_result', None)
     input_json = getattr(item.obj, '_behaviorci_input_json', None)
 
@@ -211,9 +159,8 @@ def pytest_runtest_makereport(item, call):
         )
         return
 
-    # Initialize components using singleton (BUG-003)
     storage = get_storage(item.config.behaviorci_db_path)
-    # TASK 5 (v0.2): Use configured model name
+    # FIX: Now safe to pass None (will use default), but config ensures it's set
     embedder = get_embedder(item.config.behaviorci_model)
     comparator = Comparator(storage, embedder)
 
@@ -222,13 +169,11 @@ def pytest_runtest_makereport(item, call):
     must_contain = config['must_contain']
     must_not_contain = config['must_not_contain']
 
-    # Determine mode
     record_mode = item.config.behaviorci_record or item.config.behaviorci_update
     record_missing = item.config.behaviorci_record_missing
 
     try:
         if record_mode:
-            # Record/update snapshot
             git_commit = _get_git_commit()
             snapshot_id = comparator.record_snapshot(
                 behavior_id=behavior_id,
@@ -243,7 +188,6 @@ def pytest_runtest_makereport(item, call):
                 f"Snapshot ID: {snapshot_id[:16]}..."
             ))
         else:
-            # Compare against existing snapshot
             result = comparator.compare(
                 behavior_id=behavior_id,
                 input_json=input_json,
@@ -254,7 +198,6 @@ def pytest_runtest_makereport(item, call):
                 record_mode=False
             )
 
-            # FIX-004: Handle record-missing mode
             if not result.passed and record_missing and "No snapshot found" in result.message:
                 git_commit = _get_git_commit()
                 snapshot_id = comparator.record_snapshot(
@@ -372,7 +315,6 @@ def pytest_terminal_summary(terminalreporter, exitstatus, config):
     terminalreporter.write_line(f"Behaviors: {stats['behaviors']}")
     terminalreporter.write_line(f"History records: {stats['history_records']}")
 
-    # TASK 5 (v0.2): Show active model name in summary
     if config.behaviorci_model:
         terminalreporter.write_line(f"Model: {config.behaviorci_model}")
 
