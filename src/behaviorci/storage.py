@@ -214,8 +214,7 @@ class Storage:
         return self._local.connection
 
     def _init_db(self) -> None:
-        """Initialize database schema with WAL mode for concurrency.
-
+    """Initialize database schema with WAL mode and retry for concurrency.
         WHY: BUG-002 - SQLite rollback journal causes "database is locked"
              errors with concurrent writes from pytest-xdist workers.
 
@@ -235,26 +234,33 @@ class Storage:
         # FIX-008: :memory: databases don't support WAL mode and don't need it —
         # they are single-process by definition. Schema is created per-connection
         # in _get_connection() instead.
-        if self._is_memory:
-            return
 
+    if self._is_memory:
+        return
+
+    retries = 5
+    for attempt in range(retries):
         try:
             conn = sqlite3.connect(str(self.db_path))
             conn.row_factory = sqlite3.Row
             try:
-                try:
-                    conn.execute("PRAGMA journal_mode=WAL")
-                except sqlite3.OperationalError:
-                    pass  # already being set by another process
+                conn.execute("PRAGMA journal_mode=WAL")
                 conn.execute("PRAGMA synchronous=NORMAL")
                 conn.execute("PRAGMA busy_timeout=5000")
                 conn.executescript(SCHEMA)
                 conn.commit()
+                return
             finally:
                 conn.close()
+        except sqlite3.OperationalError as e:
+            if "database is locked" in str(e) and attempt < retries - 1:
+                import time
+                time.sleep(0.1 * (attempt + 1))  # exponential-ish backoff
+                continue
+            raise StorageError(f"Failed to initialize database: {e}")
         except sqlite3.Error as e:
             raise StorageError(f"Failed to initialize database: {e}")
-
+       
     def save_snapshot(
         self,
         behavior_id: str,
