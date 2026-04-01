@@ -512,31 +512,31 @@ class TestComparator:
         assert "Missing required" in result.message or "guarantee" in str(result.missing_must_contain)
     
     def test_variance_aware_threshold(self):
-    """Test that variance-aware threshold works correctly."""
-    reset_all_storage()
-    storage = get_storage(":memory:")
-    comp = Comparator(storage, MockEmbedder())
+        """Test that variance-aware threshold works correctly."""
+        reset_all_storage()
+        storage = get_storage(":memory:")
+        comp = Comparator(storage, MockEmbedder())
     
-    # Test with low variance - should keep base threshold
-    for sim in [0.88, 0.89, 0.90, 0.91, 0.92]:  # Low variance
-        storage.record_similarity("test", sim)
+        # Test with low variance - should keep base threshold
+        for sim in [0.88, 0.89, 0.90, 0.91, 0.92]:  # Low variance
+            storage.record_similarity("test", sim)
     
-    base = 0.85
-    effective = comp.compute_effective_threshold("test", base)
+        base = 0.85
+        effective = comp.compute_effective_threshold("test", base)
     
-    # Low variance: should keep base threshold (not lower it)
-    assert effective == base, f"Low variance should keep base {base}, got {effective}"
+        # Low variance: should keep base threshold (not lower it)
+        assert effective == base, f"Low variance should keep base {base}, got {effective}"
     
-    # Test with high variance - should lower threshold
-    reset_all_storage()
-    for sim in [0.70, 0.90, 0.75, 0.85, 0.80]:  # High variance
-        storage.record_similarity("test2", sim)
+        # Test with high variance - should lower threshold
+        reset_all_storage()
+        for sim in [0.70, 0.90, 0.75, 0.85, 0.80]:  # High variance
+            storage.record_similarity("test2", sim)
     
-    effective_high = comp.compute_effective_threshold("test2", base)
+        effective_high = comp.compute_effective_threshold("test2", base)
     
-    # High variance: should lower threshold
-    assert effective_high < base, f"High variance should lower threshold below {base}, got {effective_high}"
-    assert effective_high >= 0.5, f"Threshold should not go below 0.5, got {effective_high}"
+        # High variance: should lower threshold    
+        assert effective_high < base, f"High variance should lower threshold below {base}, got {effective_high}"
+        assert effective_high >= 0.5, f"Threshold should not go below 0.5, got {effective_high}"
 
 
 # ============================================================================
