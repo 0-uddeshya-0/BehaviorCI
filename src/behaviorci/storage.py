@@ -230,11 +230,12 @@ class Storage:
         RISKS: WAL creates .db-wal and .db-shm files that must be handled in CI.
 
         VERIFIED BY: tests/test_bug_002_concurrency.py
-        """
+        
         # FIX-008: :memory: databases don't support WAL mode and don't need it —
         # they are single-process by definition. Schema is created per-connection
         # in _get_connection() instead.
-
+        """
+           
     if self._is_memory:
         return
 
