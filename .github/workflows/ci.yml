@@ -45,7 +45,7 @@ jobs:
         run: pytest tests/ -n 4 --behaviorci -v --tb=short
 
       - name: Type check
-        run: mypy src/behaviorci/ --ignore-missing-imports
+        run: mypy src/behaviorci/ --ignore-missing-imports --python-version ${{ matrix.python-version }}
 
       - name: Format check (black)
         run: black src/ tests/ --check
