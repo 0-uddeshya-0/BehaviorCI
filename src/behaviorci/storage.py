@@ -214,27 +214,27 @@ class Storage:
         return self._local.connection
 
     def _init_db(self) -> None:
-    """Initialize database schema with WAL mode and retry for concurrency.
-        WHY: BUG-002 - SQLite rollback journal causes "database is locked"
-             errors with concurrent writes from pytest-xdist workers.
+        """Initialize database schema with WAL mode and retry for concurrency.
+            WHY: BUG-002 - SQLite rollback journal causes "database is locked"
+                 errors with concurrent writes from pytest-xdist workers.
 
-        APPROACH: WAL (Write-Ahead Logging) mode allows concurrent reads/writes.
-                  - journal_mode=WAL: Enables WAL mode (persisted in DB file)
-                  - synchronous=NORMAL: Safe with WAL, faster than FULL
-                  - busy_timeout=5000: Set here too, for the init connection
+            APPROACH: WAL (Write-Ahead Logging) mode allows concurrent reads/writes.
+                      - journal_mode=WAL: Enables WAL mode (persisted in DB file)
+                      - synchronous=NORMAL: Safe with WAL, faster than FULL
+                      - busy_timeout=5000: Set here too, for the init connection
 
-        NOTE: journal_mode=WAL is a database-level persistent setting.
-              synchronous and busy_timeout are per-connection (see _get_connection).
-              WAL mode is a no-op for :memory: databases and is skipped.
+            NOTE: journal_mode=WAL is a database-level persistent setting.
+                  synchronous and busy_timeout are per-connection (see _get_connection).
+                  WAL mode is a no-op for :memory: databases and is skipped.
 
-        RISKS: WAL creates .db-wal and .db-shm files that must be handled in CI.
+            RISKS: WAL creates .db-wal and .db-shm files that must be handled in CI.
 
-        VERIFIED BY: tests/test_bug_002_concurrency.py
-        
-        # FIX-008: :memory: databases don't support WAL mode and don't need it —
-        # they are single-process by definition. Schema is created per-connection
-        # in _get_connection() instead.
-        """
+            VERIFIED BY: tests/test_bug_002_concurrency.py
+            
+            # FIX-008: :memory: databases don't support WAL mode and don't need it —
+            # they are single-process by definition. Schema is created per-connection
+            # in _get_connection() instead.
+            """
            
     if self._is_memory:
         return
