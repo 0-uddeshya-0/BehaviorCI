@@ -75,7 +75,7 @@ def test_refund_processing():
 | "It worked yesterday" mysteries | Per-input variance tracking |
 | Silent prompt degradation | Quantified behavior drift |
 
-> **Used by teams shipping LLM applications to production.**
+> **Built for teams shipping LLM Applications to production. Early adopters welcome - feedback shapes the roadmap.**
 
 ---
 
