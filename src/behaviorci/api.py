@@ -59,7 +59,8 @@ def behavior(
     behavior_id: str,
     threshold: float = 0.85,
     must_contain: Optional[List[str]] = None,
-    must_not_contain: Optional[List[str]] = None
+    must_not_contain: Optional[List[str]] = None,
+    samples: int = 1
 ) -> Callable:
     """Decorator to mark a test function for behavioral regression testing.
     
@@ -72,6 +73,7 @@ def behavior(
         threshold: Minimum cosine similarity threshold (0-1)
         must_contain: List of substrings that MUST be in output (case-insensitive)
         must_not_contain: List of substrings that MUST NOT be in output
+        samples: Number of executions for centroid baselines (handles non-determinism)
         
     Returns:
         Decorated function with behavior metadata
@@ -86,6 +88,9 @@ def behavior(
     
     if not (0.0 <= threshold <= 1.0):
         raise ConfigurationError("threshold must be between 0.0 and 1.0")
+        
+    if samples < 1:
+        raise ConfigurationError("samples must be at least 1")
     
     def decorator(func: Callable) -> Callable:
         
@@ -98,11 +103,18 @@ def behavior(
                     f"BehaviorCI tests must return the LLM output string."
                 )
             
-            if not isinstance(result, str):
-                raise ConfigurationError(
-                    f"Test function '{func.__name__}' returned {type(result).__name__}, "
-                    f"expected str. BehaviorCI tests must return the LLM output string."
-                )
+            # Validate single string OR list of strings for centroids
+            if samples > 1:
+                if not isinstance(result, list) or not all(isinstance(x, str) for x in result):
+                    raise ConfigurationError(
+                        f"Multi-sample test '{func.__name__}' must internally return a list of strings."
+                    )
+            else:
+                if not isinstance(result, str):
+                    raise ConfigurationError(
+                        f"Test function '{func.__name__}' returned {type(result).__name__}, "
+                        f"expected str. BehaviorCI tests must return the LLM output string."
+                    )
             
             # Serialize inputs (FAIL FAST if not JSON-serializable)
             input_json = serialize_inputs(args, kwargs)
@@ -116,18 +128,26 @@ def behavior(
         if inspect.iscoroutinefunction(func):
             @functools.wraps(func)
             async def async_wrapper(*args, **kwargs):
-                result = await func(*args, **kwargs)
+                if samples > 1:
+                    result = [await func(*args, **kwargs) for _ in range(samples)]
+                else:
+                    result = await func(*args, **kwargs)
                 _validate_and_store(async_wrapper, result, args, kwargs)
-                return result
+                # Return the primary string to pytest so downstream user asserts don't break
+                return result[0] if samples > 1 else result
             wrapper = async_wrapper
             
         # BRANCH 2: Standard Sync test support
         else:
             @functools.wraps(func)
             def sync_wrapper(*args, **kwargs):
-                result = func(*args, **kwargs)
+                if samples > 1:
+                    result = [func(*args, **kwargs) for _ in range(samples)]
+                else:
+                    result = func(*args, **kwargs)
                 _validate_and_store(sync_wrapper, result, args, kwargs)
-                return result
+                # Return the primary string to pytest so downstream user asserts don't break
+                return result[0] if samples > 1 else result
             wrapper = sync_wrapper
         
         # Attach configuration for pytest plugin discovery
@@ -136,7 +156,8 @@ def behavior(
             threshold=threshold,
             must_contain=must_contain,
             must_not_contain=must_not_contain,
-            func=func
+            func=func,
+            samples=samples
         )
         
         # Mark as behavior test for easy detection
