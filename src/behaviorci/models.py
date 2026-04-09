@@ -1,6 +1,6 @@
 """Pydantic models for BehaviorCI."""
 
-from typing import Any, Tuple, Dict, List, Optional
+from typing import Any, Tuple, Dict, List, Optional, Union
 from pydantic import BaseModel, Field, ConfigDict
 from datetime import datetime
 import numpy as np
@@ -41,6 +41,7 @@ class BehaviorConfig(BaseModel):
     must_contain: Optional[List[str]] = Field(default=None, description="Required substrings in output")
     must_not_contain: Optional[List[str]] = Field(default=None, description="Forbidden substrings in output")
     func: Optional[Any] = Field(default=None, exclude=True, description="Original test function")
+    samples: int = Field(default=1, ge=1, description="Number of samples for centroid baseline")
 
 
 class ComparisonResult(BaseModel):
@@ -66,7 +67,7 @@ class CapturedBehavior(BaseModel):
     
     model_config = ConfigDict(arbitrary_types_allowed=True)
     
-    output_text: str = Field(..., description="Captured LLM output")
+    output_text: Union[str, List[str]] = Field(..., description="Captured LLM output or list of samples")
     args: Tuple = Field(default_factory=tuple, description="Positional arguments")
     kwargs: Dict[str, Any] = Field(default_factory=dict, description="Keyword arguments")
     behavior_id: str = Field(..., description="Logical behavior identifier")
