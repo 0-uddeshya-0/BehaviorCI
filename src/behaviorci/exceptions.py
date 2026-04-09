@@ -61,6 +61,11 @@ class ComparisonError(BehaviorCIError):
     pass
 
 
+class StorageError(BehaviorCIError):
+    """Raised when database or storage operations fail."""
+    pass
+
+
 class ModelMismatchWarning(Warning):
     """Warning issued when comparing snapshots from different embedding models."""
     def __init__(self, message: str, suggestion: Optional[str] = None):
