@@ -101,13 +101,21 @@ def test_support_response_tone():
 
 ### 3. Record Baseline
 
+> **Note**: When you record a snapshot for the first time, BehaviorCI will output the exact generation. Review it carefully to ensure you aren't capturing an LLM hallucination as your ground truth.
+
 ```bash
 pytest test_support.py --behaviorci-record
 ```
 ```text
 ✅ Recorded snapshot: support_tone_check
+Snapshot ID: a1b2c3d4e5f6g7h8...
+
+⚠️ URGENT: Review the captured output below to ensure it is correct.
+This will be your new ground truth for future tests.
+==================================================
+I'm sorry to hear about your billing frustration. Let me help resolve this...
+==================================================
 ```
-Note: Always review your terminal output on the first record to ensure you aren't capturing a hallucination as your ground truth.
 
 ### 4. Check for Regressions
 
