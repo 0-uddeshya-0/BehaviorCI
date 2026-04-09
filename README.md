@@ -1,21 +1,9 @@
 <div align="center">
   <h1>🤖 BehaviorCI</h1>
-<div align="center">
-  </div>
-
-<br>
-
-<div align="center">
-  <a href="https://github.com/0-uddeshya-0/BehaviorCI"><img src="https://img.shields.io/badge/Status-Alpha-orange.svg?style=for-the-badge" alt="Status: Alpha"></a>
-</div>
-
-> ⚠️ **Project Status: Alpha** — BehaviorCI is fully functional for local development and CI pipelines, but the API and storage mechanisms are actively stabilizing. Breaking changes may occur before v1.0. We strongly recommend pinning your dependency version (e.g., `behaviorci==0.1.0`).
-
-<hr/>
-
+  
   <p>
     <strong>pytest for LLM behavior</strong><br>
-    Catch prompt regressions before they reach production.
+    Track semantic drift and prompt regressions during development.
   </p>
 
   <p>
@@ -24,42 +12,40 @@
     <a href="https://opensource.org/licenses/MIT"><img src="https://img.shields.io/badge/License-MIT-yellow.svg?style=for-the-badge" alt="License"></a>
   </p>
 
-  <p>
-    <em>Record once. Check forever. Fail on semantic drift.</em>
-  </p>
+  <br>
+
+  <a href="https://github.com/0-uddeshya-0/BehaviorCI"><img src="https://img.shields.io/badge/Status-Alpha-orange.svg?style=for-the-badge" alt="Status: Alpha"></a>
 </div>
+
+> ⚠️ **Project Status: Alpha** — BehaviorCI is actively used for local development and CI pipelines, but the internal API and storage mechanisms are currently stabilizing. Breaking changes may occur before v1.0. We strongly recommend pinning your dependency version (e.g., `behaviorci==0.1.0`).
 
 <hr/>
 
 ## 📑 Table of Contents
-- The Problem
-- The Solution
-- Why BehaviorCI?
-- Quick Start
-- How It Works
-- Core Concepts
-- Installation & Setup
-- CLI Reference
-- Advanced Usage
-- Architecture
-- Alternatives
-- Troubleshooting
+- [The Problem](#-the-problem)
+- [The Solution](#-the-solution)
+- [Quick Start](#-quick-start)
+- [Core Concepts](#-core-concepts)
+- [Installation Options](#-installation-options)
+- [CLI Reference](#-cli-reference)
+- [Advanced: API Embedders](#-advanced-api-embedders)
+- [Known Limitations & Workflows](#️-known-limitations--team-workflows)
+- [Architecture](#️-architecture)
 
 ---
 
 ## 🚨 The Problem
 
-You shipped a prompt update. It looked fine in testing. Then production metrics dropped.
+You shipped a prompt update. It looked fine in standard unit tests, but downstream metrics dropped.
 
-**What happened?** Your "improved" prompt changed output format. The downstream parser broke. Users saw errors. Revenue dipped.
+**What happened?** Your prompt tweak changed the output format. The downstream parser broke. 
 
-Traditional testing doesn't catch this. Unit tests pass. Integration tests pass. But **behavior changed** in subtle ways that matter.
+Traditional exact-match string testing (`assert result == "Success"`) is brittle for generative AI. Unit tests pass, but the **underlying semantic behavior** has drifted.
 
 ```python
-# Before: "The refund will be processed in 3-5 business days."
-# After:  "Refund approved. Processing time: 3-5 days."
-# Result: Similar meaning, different format. Broken parser.
-```
+# Baseline Output:  "The refund will be processed in 3-5 business days."
+# Modified Prompt:  "Refund approved. Processing time: 3-5 days."
+# Result:           Similar semantic meaning, completely different string.
 
 ## 💡 The Solution
 
@@ -109,7 +95,7 @@ from behaviorci import behavior
 def test_support_response_tone():
     """Verify support responses maintain helpful tone."""
     response = generate_support_response("I'm frustrated with billing")
-    return response  # Must return string
+    return response  # Must return the generative string
 ```
 
 ### 3. Record Baseline
@@ -118,13 +104,13 @@ def test_support_response_tone():
 pytest test_support.py --behaviorci-record
 ```
 ```text
-.behaviorci/behaviorci.db created
-1 snapshot recorded
+✅ Recorded snapshot: support_tone_check
 ```
+Note: Always review your terminal output on the first record to ensure you aren't capturing a hallucination as your ground truth.
 
 ### 4. Check for Regressions
 
-Change your prompt, then run the check:
+Change your prompt or switch underlying models, then run the check:
 
 ```bash
 pytest test_support.py --behaviorci
@@ -140,6 +126,8 @@ Billing issues are handled by our finance team. Contact finance@example.com.
 *Regression caught in CI, not production!*
 
 ### 5. Update When Intentional
+
+If the behavior change was intentional, accept it:
 
 ```bash
 pytest test_support.py --behaviorci-update
@@ -194,10 +182,10 @@ pytest test_support.py --behaviorci-update
 
 ```python
 @behavior(
-    behavior_id="unique_identifier",      # Logical name (validated for uniqueness)
+    behavior_id="unique_identifier",      # Logical name (must be unique per suite)
     threshold=0.85,                       # Minimum similarity (0-1)
-    must_contain=["required", "words"],   # Required substrings
-    must_not_contain=["forbidden"]        # Forbidden patterns
+    must_contain=["required", "words"],   # Lexical fast-fail (optional)
+    must_not_contain=["forbidden"]        # Lexical fast-fail (optional)
 )
 def test_your_llm_function():
     result = your_llm_function("input")
@@ -207,19 +195,27 @@ def test_your_llm_function():
 
 ### Variance-Aware Thresholds
 
-BehaviorCI learns your normal variance:
+BehaviorCI attempts to learn your prompt's normal variance:
 * **Runs 1 & 2**: `threshold = 0.85` (your baseline setting).
 * **Runs 3+**: `threshold = max(0.85, mean(history) - 2*std)`.
-* If your outputs naturally vary (e.g., creative writing), the threshold adapts to avoid false positives. If outputs should be identical (e.g., structured JSON), the threshold stays high.
-
+* If your outputs naturally fluctuate (e.g., highly creative prompts), the system will dynamically relax the similarity threshold to avoid false positive test failures. If the output is highly rigid (e.g., JSON), the threshold remains strict.
 ---
 
-## 🛠️ Installation & Setup
+## 🛠️ Installation Options
 
-### Requirements
-- Python 3.8+
-- pytest 7.0+
-- ~22MB disk space (embedding model)
+BehaviorCI offers two installation paths to keep your CI pipelines as lean as possible.
+
+**Option A: Lightweight (API-Based)**
+Installs only core dependencies (a few MBs). Requires you to inject an API-based embedder (like OpenAI or Cohere) in your tests.
+```bash
+pip install behaviorci
+```
+
+**Option B: Offline (Local Models)**
+Installs `sentence-transformers` and PyTorch (~1GB). Runs everything locally with zero API calls.
+```bash
+pip install "behaviorci[local]"
+```
 
 ### CI/CD Configuration
 
@@ -243,7 +239,7 @@ jobs:
           path: ~/.cache/torch/sentence_transformers
           key: ${{ runner.os }}-st-model-${{ hashFiles('**/requirements.txt') }}
           
-      - run: pip install behaviorci pytest
+      - run: pip install "behaviorci[local]" pytest
       
       # Check existing behaviors, auto-record new ones
       - run: pytest --behaviorci-record-missing
@@ -254,6 +250,37 @@ jobs:
         with:
           commit_message: "chore: update behavioral snapshots"
           file_pattern: ".behaviorci/"
+```
+
+---
+
+## 🔌 Advanced: API Embedders
+
+If you chose the Lightweight installation, you can easily inject any API client you already use (OpenAI, Gemini, Cohere, etc.) to handle the embeddings without adding PyTorch to your system.
+
+Simply define and inject your embedder in your `conftest.py`:
+
+```python
+import pytest
+import numpy as np
+from behaviorci.embedder import Embedder, set_embedder
+from openai import OpenAI
+
+class OpenAIEmbedder(Embedder):
+    def __init__(self):
+        super().__init__(model_name="text-embedding-3-small")
+        self.client = OpenAI()
+
+    def embed_single(self, text: str) -> np.ndarray:
+        response = self.client.embeddings.create(
+            input=text, 
+            model=self.model_name
+        )
+        # BehaviorCI requires a normalized float32 numpy array
+        return np.array(response.data[0].embedding, dtype=np.float32)
+
+# Inject globally before test collection
+set_embedder(OpenAIEmbedder())
 ```
 
 ---
@@ -322,8 +349,7 @@ If your LLM prompt has high variance (e.g., high temperature, creative writing),
 * For strict formatting (JSON, low temperature), use `@behavior(threshold=0.95)`
 * For creative text, use `@behavior(threshold=0.60)`
 
----
-
+  
 ## 🏛️ Architecture
 
 Designed for robustness and speed:
