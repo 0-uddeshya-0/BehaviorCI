@@ -321,6 +321,21 @@ behaviorci clear --force
 
 ## 📈 Advanced Usage
 
+### 📈 Handling Highly Creative Outputs (Centroid Baselines)
+
+If you are testing a prompt with high variance (e.g., Temperature > 0.8, story generation, open-ended summarization), comparing against a single baseline string will cause false positives. 
+
+Instead, use **Centroid Baselines**. By adding the `samples` parameter, BehaviorCI will run your test multiple times, extract the embeddings, and average them together to create a mathematical "gravity center" representing the true intent of the prompt.
+
+```python
+from behaviorci import behavior
+
+# Runs 3 times, records the average embedding as the baseline
+@behavior("creative_story_gen", threshold=0.75, samples=3)
+def test_story_generation():
+    return generate_story("Write a creative sci-fi intro")
+```
+
 ### Handling Non-Deterministic Outputs
 Some outputs contain timestamps, random IDs, or dates. Handle these by normalizing inputs or mocking:
 
