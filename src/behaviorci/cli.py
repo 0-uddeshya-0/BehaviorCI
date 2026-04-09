@@ -1,166 +1,114 @@
-"""CLI for BehaviorCI - thin wrapper around pytest."""
-
-import subprocess
-import sys
-from pathlib import Path
-from typing import Optional
+"""Command-line interface for BehaviorCI."""
 
 import typer
-from typing_extensions import Annotated
+import subprocess
+from pathlib import Path
 
-from .storage import get_storage
+from .storage import get_storage, reset_all_storage
 
 app = typer.Typer(
-    name="behaviorci",
-    help="Pytest-native behavioral regression testing for LLM applications",
-    no_args_is_help=True,
+    help="BehaviorCI - Pytest-native behavioral regression testing for LLMs",
+    no_args_is_help=True
 )
 
-
-def _run_pytest(
-    behaviorci_args: list,
-    pytest_args: Optional[list] = None,
-    directory: Optional[str] = None
-) -> int:
-    """Run pytest with BehaviorCI options."""
-    cmd = ["pytest"] + behaviorci_args + (pytest_args or [])
-
-    if directory:
-        cmd.append(directory)
-
-    typer.echo(f"Running: {' '.join(cmd)}")
-
+def run_pytest(args: list[str]) -> None:
+    """Helper to run pytest with BehaviorCI arguments."""
+    cmd = ["pytest"] + args
     try:
-        result = subprocess.run(cmd, check=False)
-        return result.returncode
-    except FileNotFoundError:
-        typer.echo("Error: pytest not found. Install with: pip install pytest", err=True)
-        return 1
-    except KeyboardInterrupt:
-        typer.echo("\nInterrupted.")
-        return 130
-
+        subprocess.run(cmd, check=True)
+    except subprocess.CalledProcessError as e:
+        raise typer.Exit(code=e.returncode)
 
 @app.command()
 def record(
-    directory: Annotated[Optional[str], typer.Argument(help="Test directory")] = None,
-    pytest_args: Annotated[Optional[list[str]], typer.Argument(help="Additional pytest arguments")] = None,
-    db_path: Annotated[Optional[str], typer.Option("--db", help="Path to BehaviorCI database")] = None,
-    # TASK 5 (v0.2): Add --model flag for custom embedding models
-    model: Annotated[Optional[str], typer.Option("--model", help="Embedding model name (e.g., sentence-transformers/all-mpnet-base-v2)")] = None,
-):
-    """Record new behavioral snapshots (creates or overwrites)."""
-    behaviorci_args = ["--behaviorci-record"]
-    if db_path:
-        behaviorci_args.extend(["--behaviorci-db", db_path])
-    if model:
-        behaviorci_args.extend(["--behaviorci-model", model])
-    sys.exit(_run_pytest(behaviorci_args, pytest_args, directory))
-
+    path: str = typer.Argument("tests/", help="Path to tests"),
+    db: str = typer.Option(None, "--db", help="Custom database path")
+) -> None:
+    """Record new behavioral snapshots (overwrites existing)."""
+    typer.echo(f"Recording snapshots for {path}...")
+    args = [path, "--behaviorci-record", "-v"]
+    if db:
+        args.extend(["--behaviorci-db", db])
+    run_pytest(args)
 
 @app.command()
 def check(
-    directory: Annotated[Optional[str], typer.Argument(help="Test directory")] = None,
-    pytest_args: Annotated[Optional[list[str]], typer.Argument(help="Additional pytest arguments")] = None,
-    db_path: Annotated[Optional[str], typer.Option("--db", help="Path to BehaviorCI database")] = None,
-    # TASK 5 (v0.2): Add --model flag for custom embedding models
-    model: Annotated[Optional[str], typer.Option("--model", help="Embedding model name (e.g., sentence-transformers/all-mpnet-base-v2)")] = None,
-):
-    """Run behavioral regression tests (fails on behavior change)."""
-    behaviorci_args = ["--behaviorci"]
-    if db_path:
-        behaviorci_args.extend(["--behaviorci-db", db_path])
-    if model:
-        behaviorci_args.extend(["--behaviorci-model", model])
-    sys.exit(_run_pytest(behaviorci_args, pytest_args, directory))
-
+    path: str = typer.Argument("tests/", help="Path to tests"),
+    db: str = typer.Option(None, "--db", help="Custom database path")
+) -> None:
+    """Check for behavioral regressions."""
+    typer.echo(f"Checking for regressions in {path}...")
+    args = [path, "--behaviorci", "-v"]
+    if db:
+        args.extend(["--behaviorci-db", db])
+    run_pytest(args)
 
 @app.command()
 def update(
-    directory: Annotated[Optional[str], typer.Argument(help="Test directory")] = None,
-    pytest_args: Annotated[Optional[list[str]], typer.Argument(help="Additional pytest arguments")] = None,
-    db_path: Annotated[Optional[str], typer.Option("--db", help="Path to BehaviorCI database")] = None,
-    # TASK 5 (v0.2): Add --model flag for custom embedding models
-    model: Annotated[Optional[str], typer.Option("--model", help="Embedding model name (e.g., sentence-transformers/all-mpnet-base-v2)")] = None,
-):
-    """Update failing snapshots (accept new behavior)."""
-    behaviorci_args = ["--behaviorci-update"]
-    if db_path:
-        behaviorci_args.extend(["--behaviorci-db", db_path])
-    if model:
-        behaviorci_args.extend(["--behaviorci-model", model])
-    sys.exit(_run_pytest(behaviorci_args, pytest_args, directory))
-
+    path: str = typer.Argument("tests/", help="Path to tests"),
+    db: str = typer.Option(None, "--db", help="Custom database path")
+) -> None:
+    """Update failing snapshots with current output."""
+    typer.echo(f"Updating failing snapshots in {path}...")
+    args = [path, "--behaviorci-update", "-v"]
+    if db:
+        args.extend(["--behaviorci-db", db])
+    run_pytest(args)
 
 @app.command()
 def record_missing(
-    directory: Annotated[Optional[str], typer.Argument(help="Test directory")] = None,
-    pytest_args: Annotated[Optional[list[str]], typer.Argument(help="Additional pytest arguments")] = None,
-    db_path: Annotated[Optional[str], typer.Option("--db", help="Path to BehaviorCI database")] = None,
-    # TASK 5 (v0.2): Add --model flag for custom embedding models
-    model: Annotated[Optional[str], typer.Option("--model", help="Embedding model name (e.g., sentence-transformers/all-mpnet-base-v2)")] = None,
-):
-    """Record missing snapshots (CI workflow - checks existing, records new)."""
-    behaviorci_args = ["--behaviorci-record-missing"]
-    if db_path:
-        behaviorci_args.extend(["--behaviorci-db", db_path])
-    if model:
-        behaviorci_args.extend(["--behaviorci-model", model])
-    sys.exit(_run_pytest(behaviorci_args, pytest_args, directory))
-
+    path: str = typer.Argument("tests/", help="Path to tests"),
+    db: str = typer.Option(None, "--db", help="Custom database path")
+) -> None:
+    """Record missing snapshots and check existing (CI workflow)."""
+    typer.echo(f"Recording missing snapshots in {path}...")
+    args = [path, "--behaviorci-record-missing", "-v"]
+    if db:
+        args.extend(["--behaviorci-db", db])
+    run_pytest(args)
 
 @app.command()
 def stats(
-    db_path: Annotated[Optional[str], typer.Option("--db", help="Path to BehaviorCI database")] = None,
-):
-    """Show database statistics."""
-    storage = get_storage(db_path)
-    stats_data = storage.get_stats()
-
-    typer.echo("BehaviorCI Database Statistics")
-    typer.echo("=" * 30)
-    typer.echo(f"Total snapshots: {stats_data['snapshots']}")
-    typer.echo(f"Unique behaviors: {stats_data['behaviors']}")
-    typer.echo(f"History records: {stats_data['history_records']}")
-
-    if stats_data['snapshots'] > 0:
-        typer.echo("\nSnapshots per behavior:")
-        # HIGH-002 FIX: Use Storage method instead of raw SQLite
-        summary = storage.get_behavior_summary()
-        for behavior_id, count, last_run in summary:
-            typer.echo(f"  {behavior_id}: {count}")
-
+    db: str = typer.Option(None, "--db", help="Custom database path")
+) -> None:
+    """Show statistics about stored behaviors."""
+    storage = get_storage(db)
+    stats_dict = storage.get_stats()
+    
+    typer.echo("\n📊 BehaviorCI Statistics")
+    typer.echo("=========================")
+    typer.echo(f"Total Snapshots: {stats_dict['snapshots']}")
+    typer.echo(f"Unique Behaviors: {stats_dict['behaviors']}")
+    typer.echo(f"History Records: {stats_dict['history_records']}")
+    typer.echo("")
 
 @app.command()
 def clear(
-    db_path: Annotated[Optional[str], typer.Option("--db", help="Path to BehaviorCI database")] = None,
-    force: Annotated[bool, typer.Option("--force", help="Skip confirmation")] = False,
-):
-    """Clear all snapshots (USE WITH CAUTION)."""
-    storage = get_storage(db_path)
-    stats_data = storage.get_stats()
-
-    if stats_data['snapshots'] == 0:
-        typer.echo("Database is already empty.")
-        return
-
+    force: bool = typer.Option(False, "--force", "-f", help="Force deletion without prompt"),
+    db: str = typer.Option(None, "--db", help="Custom database path")
+) -> None:
+    """Clear all stored snapshots (destructive)."""
     if not force:
-        confirm = typer.confirm(
-            f"Delete {stats_data['snapshots']} snapshots and "
-            f"{stats_data['history_records']} history records?"
-        )
+        confirm = typer.confirm("Are you sure you want to delete ALL snapshots?")
         if not confirm:
-            typer.echo("Aborted.")
-            return
+            typer.echo("Operation cancelled.")
+            raise typer.Exit()
+            
+    storage = get_storage(db)
+    db_path = storage.db_path
+    
+    reset_all_storage()
+    
+    try:
+        Path(db_path).unlink(missing_ok=True)
+        typer.echo(f"Successfully deleted {db_path}")
+    except Exception as e:
+        typer.echo(f"Error deleting database: {e}", err=True)
+        raise typer.Exit(code=1)
 
-    storage.clear_all()
-    typer.echo("Database cleared.")
-
-
-def main():
+def main() -> None:
     """Entry point for the CLI."""
     app()
-
 
 if __name__ == "__main__":
     main()
