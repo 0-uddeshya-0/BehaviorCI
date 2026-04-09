@@ -18,7 +18,7 @@ import pytest
 import os
 import subprocess
 import json
-from typing import Optional, Dict, Union, List
+from typing import Optional, Dict, Union, List, Any
 
 from .api import get_behavior_config, serialize_inputs
 from .storage import get_storage, reset_all_storage
@@ -31,7 +31,7 @@ from .exceptions import BehaviorCIError, SerializationError, ConfigurationError
 CONFIG_KEY = pytest.StashKey[dict]()
 
 
-def pytest_addoption(parser):
+def pytest_addoption(parser: Any) -> None:
     """Add BehaviorCI command-line options."""
     group = parser.getgroup("behaviorci", "Behavioral regression testing for LLMs")
     group.addoption(
@@ -72,7 +72,7 @@ def pytest_addoption(parser):
     )
 
 
-def pytest_configure(config):
+def pytest_configure(config: Any) -> None:
     """Configure BehaviorCI based on options."""
     config.behaviorci_enabled = (
         config.getoption("--behaviorci") or
@@ -88,7 +88,7 @@ def pytest_configure(config):
     config.behaviorci_model = config.getoption("--behaviorci-model")
 
 
-def pytest_collection_modifyitems(config, items):
+def pytest_collection_modifyitems(config: Any, items: Any) -> None:
     """Validate behavior tests during collection."""
     if not config.behaviorci_enabled:
         return
@@ -132,7 +132,7 @@ def pytest_collection_modifyitems(config, items):
 
 
 @pytest.hookimpl(tryfirst=True, hookwrapper=True)
-def pytest_runtest_makereport(item, call):
+def pytest_runtest_makereport(item: Any, call: Any) -> Any:
     """Generate report for behavior tests."""
     outcome = yield
 
@@ -330,7 +330,7 @@ def _generate_diff(stored_output: str, current_output: Union[str, List[str]], si
     return "\n".join(lines)
 
 
-def pytest_terminal_summary(terminalreporter, exitstatus, config):
+def pytest_terminal_summary(terminalreporter: Any, exitstatus: Any, config: Any) -> None:
     """Print BehaviorCI summary at end of test run."""
     if not config.behaviorci_enabled:
         return
@@ -356,6 +356,6 @@ def pytest_terminal_summary(terminalreporter, exitstatus, config):
         terminalreporter.write_line("Mode: CHECK (regression testing)")
 
 
-def pytest_sessionfinish(session, exitstatus):
+def pytest_sessionfinish(session: Any, exitstatus: Any) -> None:
     """Clean up after test session."""
     pass
