@@ -1,8 +1,4 @@
-"""Public API for BehaviorCI - the @behavior decorator.
-
-CRITICAL: Pytest ignores return values by default. We use function attributes
-+ stash pattern to capture return values from test functions.
-"""
+"""Public API for BehaviorCI - the @behavior decorator."""
 
 import functools
 import json
@@ -12,39 +8,19 @@ from typing import Callable, Optional, List, Any, Tuple
 from .models import BehaviorConfig, CapturedBehavior
 from .exceptions import SerializationError, ConfigurationError
 
-
 def serialize_inputs(args: Tuple, kwargs: dict) -> str:
-    """Serialize function inputs to canonical JSON.
-    
-    CRITICAL: Uses STRICT serialization - NO default=str.
-    Fails fast on non-serializable inputs.
-    
-    Args:
-        args: Positional arguments
-        kwargs: Keyword arguments
-        
-    Returns:
-        Canonical JSON string
-        
-    Raises:
-        SerializationError: If inputs are not JSON-serializable
-    """
     data = {'args': args, 'kwargs': kwargs}
     try:
-        # STRICT - NO default=str
         return json.dumps(data, sort_keys=True)
     except TypeError as e:
-        # Extract the problematic object type from error message or args
         obj = getattr(e, 'obj', None)
         if obj is not None:
             obj_type = type(obj).__name__
         else:
-            # Try to extract from error message
             msg = str(e)
             if 'datetime' in msg.lower():
                 obj_type = 'datetime'
             elif 'is not JSON serializable' in msg:
-                # Extract type from message like "Object of type datetime is not JSON serializable"
                 parts = msg.split('type ')
                 if len(parts) > 1:
                     obj_type = parts[1].split()[0].rstrip('.')
@@ -62,27 +38,6 @@ def behavior(
     must_not_contain: Optional[List[str]] = None,
     samples: int = 1
 ) -> Callable:
-    """Decorator to mark a test function for behavioral regression testing.
-    
-    The decorated function's RETURN VALUE is captured as the LLM output.
-    The function MUST return a string (the LLM output to compare).
-    Supports both sync and async test functions.
-    
-    Args:
-        behavior_id: Logical behavior identifier (e.g., "refund_classifier")
-        threshold: Minimum cosine similarity threshold (0-1)
-        must_contain: List of substrings that MUST be in output (case-insensitive)
-        must_not_contain: List of substrings that MUST NOT be in output
-        samples: Number of executions for centroid baselines (handles non-determinism)
-        
-    Returns:
-        Decorated function with behavior metadata
-        
-    Example:
-        @behavior("classifier", threshold=0.85, must_contain=["refund"])
-        def test_refund():
-            return classify("I want a refund")  # RETURN VALUE CAPTURED
-    """
     if not behavior_id or not isinstance(behavior_id, str):
         raise ConfigurationError("behavior_id must be a non-empty string")
     
@@ -94,16 +49,13 @@ def behavior(
     
     def decorator(func: Callable) -> Callable:
         
-        # Helper to apply validation and caching uniformly to both sync and async wrappers
-        def _validate_and_store(wrapper_func: Callable, result: Any, args: Tuple, kwargs: dict):
-            # CRITICAL: Validate return value
+        def _validate_and_store(wrapper_func: Callable, result: Any, args: Tuple, kwargs: dict) -> None:
             if result is None:
                 raise ConfigurationError(
                     f"Test function '{func.__name__}' returned None. "
                     f"BehaviorCI tests must return the LLM output string."
                 )
             
-            # Validate single string OR list of strings for centroids
             if samples > 1:
                 if not isinstance(result, list) or not all(isinstance(x, str) for x in result):
                     raise ConfigurationError(
@@ -116,42 +68,35 @@ def behavior(
                         f"expected str. BehaviorCI tests must return the LLM output string."
                     )
             
-            # Serialize inputs (FAIL FAST if not JSON-serializable)
             input_json = serialize_inputs(args, kwargs)
             
-            # Store result for pytest plugin to retrieve via item.obj._behaviorci_result
-            wrapper_func._behaviorci_result = result
-            wrapper_func._behaviorci_input = (args, kwargs)
-            wrapper_func._behaviorci_input_json = input_json
+            wrapper_func._behaviorci_result = result  # type: ignore[attr-defined]
+            wrapper_func._behaviorci_input = (args, kwargs)  # type: ignore[attr-defined]
+            wrapper_func._behaviorci_input_json = input_json  # type: ignore[attr-defined]
 
-        # BRANCH 1: Async test support
         if inspect.iscoroutinefunction(func):
             @functools.wraps(func)
-            async def async_wrapper(*args, **kwargs):
+            async def async_wrapper(*args: Any, **kwargs: Any) -> Any:
                 if samples > 1:
                     result = [await func(*args, **kwargs) for _ in range(samples)]
                 else:
                     result = await func(*args, **kwargs)
                 _validate_and_store(async_wrapper, result, args, kwargs)
-                # Return the primary string to pytest so downstream user asserts don't break
                 return result[0] if samples > 1 else result
             wrapper = async_wrapper
             
-        # BRANCH 2: Standard Sync test support
         else:
             @functools.wraps(func)
-            def sync_wrapper(*args, **kwargs):
+            def sync_wrapper(*args: Any, **kwargs: Any) -> Any:
                 if samples > 1:
                     result = [func(*args, **kwargs) for _ in range(samples)]
                 else:
                     result = func(*args, **kwargs)
                 _validate_and_store(sync_wrapper, result, args, kwargs)
-                # Return the primary string to pytest so downstream user asserts don't break
                 return result[0] if samples > 1 else result
             wrapper = sync_wrapper
         
-        # Attach configuration for pytest plugin discovery
-        wrapper._behavior_config = BehaviorConfig(
+        wrapper._behavior_config = BehaviorConfig(  # type: ignore[attr-defined]
             behavior_id=behavior_id,
             threshold=threshold,
             must_contain=must_contain,
@@ -160,8 +105,7 @@ def behavior(
             samples=samples
         )
         
-        # Mark as behavior test for easy detection
-        wrapper._is_behavior_test = True
+        wrapper._is_behavior_test = True  # type: ignore[attr-defined]
         
         return wrapper
     
@@ -169,38 +113,12 @@ def behavior(
 
 
 def get_behavior_config(func: Callable) -> Optional[BehaviorConfig]:
-    """Get behavior configuration from a decorated function.
-    
-    Args:
-        func: Potentially decorated function
-        
-    Returns:
-        BehaviorConfig if decorated, None otherwise
-    """
     return getattr(func, '_behavior_config', None)
 
-
 def is_behavior_test(func: Callable) -> bool:
-    """Check if a function is a behavior test.
-    
-    Args:
-        func: Function to check
-        
-    Returns:
-        True if decorated with @behavior
-    """
     return getattr(func, '_is_behavior_test', False)
 
-
 def get_captured_behavior(func: Callable) -> Optional[CapturedBehavior]:
-    """Get captured behavior from a recently executed test function.
-    
-    Args:
-        func: The decorated test function (after execution)
-        
-    Returns:
-        CapturedBehavior with output and metadata, or None if not executed
-    """
     config = get_behavior_config(func)
     if config is None:
         return None
@@ -221,8 +139,6 @@ def get_captured_behavior(func: Callable) -> Optional[CapturedBehavior]:
         must_not_contain=config.must_not_contain
     )
 
-
-# Convenience exports
 __all__ = [
     'behavior',
     'serialize_inputs',
