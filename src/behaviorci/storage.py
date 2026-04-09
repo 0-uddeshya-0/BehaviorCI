@@ -177,7 +177,7 @@ class Storage:
         """Get thread-local database connection.
 
         WHY: BUG-003 - SQLite connections are NOT thread-safe.
-             Each thread must have its own connection.
+              Each thread must have its own connection.
 
         FIX-007: busy_timeout is a per-connection setting and is NOT persisted
                  by WAL mode. It must be set on every new connection, not just
@@ -211,7 +211,8 @@ class Storage:
                 self._local.connection.executescript(SCHEMA)
                 self._local.connection.commit()
 
-        return self._local.connection
+        # MYPY FIX: explicitly ignore upstream sqlite3 connection Any return
+        return self._local.connection  # type: ignore[no-any-return]
 
     def _init_db(self) -> None:
         """Initialize database schema with WAL mode and retry for concurrency.
