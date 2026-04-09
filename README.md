@@ -46,6 +46,7 @@ Traditional exact-match string testing (`assert result == "Success"`) is brittle
 # Baseline Output:  "The refund will be processed in 3-5 business days."
 # Modified Prompt:  "Refund approved. Processing time: 3-5 days."
 # Result:           Similar semantic meaning, completely different string.
+```
 
 ## 💡 The Solution
 
