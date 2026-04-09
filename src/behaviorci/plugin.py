@@ -10,6 +10,7 @@ BUG FIXES APPLIED:
 - FIX-006: Removed pytest_runtest_call hook to prevent double-execution.
            The previous implementation had a hook that called the test runner,
            which conflicted with pytest's default runner causing duplicate executions.
+- FIX-009: Added mandatory output review block on snapshot recording to prevent blind baselines.
 """
 
 import pytest
@@ -184,8 +185,13 @@ def pytest_runtest_makereport(item, call):
 
             report.sections.append((
                 "BehaviorCI",
-                f"Recorded snapshot: {behavior_id}\n"
-                f"Snapshot ID: {snapshot_id[:16]}..."
+                f"✅ Recorded snapshot: {behavior_id}\n"
+                f"Snapshot ID: {snapshot_id[:16]}...\n\n"
+                f"⚠️ URGENT: Review the captured output below to ensure it is correct.\n"
+                f"This will be your new ground truth for future tests.\n"
+                f"{'='*50}\n"
+                f"{output_text}\n"
+                f"{'='*50}"
             ))
         else:
             result = comparator.compare(
@@ -209,8 +215,13 @@ def pytest_runtest_makereport(item, call):
 
                 report.sections.append((
                     "BehaviorCI",
-                    f"Auto-recorded missing snapshot: {behavior_id}\n"
-                    f"Snapshot ID: {snapshot_id[:16]}...\n"
+                    f"✅ Auto-recorded missing snapshot: {behavior_id}\n"
+                    f"Snapshot ID: {snapshot_id[:16]}...\n\n"
+                    f"⚠️ URGENT: Review the captured output below to ensure it is correct.\n"
+                    f"This will be your new ground truth for future tests.\n"
+                    f"{'='*50}\n"
+                    f"{output_text}\n"
+                    f"{'='*50}\n"
                     f"(Use --behaviorci-record to record all, --behaviorci for strict mode)"
                 ))
             else:
