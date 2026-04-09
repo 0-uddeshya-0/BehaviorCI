@@ -5,8 +5,9 @@ Layer 1: Semantic similarity using embeddings
 """
 
 import numpy as np
+import json
 import warnings
-from typing import List, Optional
+from typing import List, Optional, Union
 
 from .models import ComparisonResult, Snapshot
 from .storage import Storage
@@ -26,6 +27,21 @@ class Comparator:
         """
         self.storage = storage
         self.embedder = embedder or get_embedder()
+    
+    def _compute_embedding(self, text: Union[str, List[str]]) -> np.ndarray:
+        """Compute standard or centroid embedding.
+        
+        If a list of strings is provided, embeds all, averages them, 
+        and re-normalizes the resulting centroid vector.
+        """
+        if isinstance(text, list):
+            embeddings = [self.embedder.embed_single(t) for t in text]
+            centroid = np.mean(embeddings, axis=0)
+            norm = np.linalg.norm(centroid)
+            if norm > 0:
+                centroid = centroid / norm
+            return centroid.astype(np.float32)
+        return self.embedder.embed_single(text)
     
     def check_lexical(
         self,
@@ -113,7 +129,7 @@ class Comparator:
         self,
         behavior_id: str,
         input_json: str,
-        output_text: str,
+        output_text: Union[str, List[str]],
         base_threshold: float = 0.85,
         must_contain: Optional[List[str]] = None,
         must_not_contain: Optional[List[str]] = None,
@@ -127,7 +143,7 @@ class Comparator:
         Args:
             behavior_id: Logical behavior identifier
             input_json: JSON-serialized input arguments
-            output_text: Current LLM output
+            output_text: Current LLM output (or list of outputs for centroid)
             base_threshold: Minimum similarity threshold
             must_contain: Required substrings
             must_not_contain: Forbidden substrings
@@ -180,9 +196,10 @@ class Comparator:
                 current_model=self.embedder.model_name
             )
         
-        # Layer 0: Lexical checks
+        # Layer 0: Lexical checks (Checked against the primary/first generation)
+        text_for_lexical = output_text[0] if isinstance(output_text, list) else output_text
         lexical_passed, missing_must, found_must_not = self.check_lexical(
-            output_text, must_contain, must_not_contain
+            text_for_lexical, must_contain, must_not_contain
         )
         
         # If lexical checks fail, fail immediately (skip embedding)
@@ -207,8 +224,8 @@ class Comparator:
             )
         
         # Layer 1: Semantic comparison
-        # Compute embedding for current output
-        current_embedding = self.embedder.embed_single(output_text)
+        # Compute embedding for current output (handles Centroid if list)
+        current_embedding = self._compute_embedding(output_text)
         stored_embedding = snapshot.get_embedding_array()
         
         # Compute similarity
@@ -251,7 +268,7 @@ class Comparator:
         self,
         behavior_id: str,
         input_json: str,
-        output_text: str,
+        output_text: Union[str, List[str]],
         git_commit: Optional[str] = None
     ) -> str:
         """Record a new snapshot.
@@ -259,20 +276,23 @@ class Comparator:
         Args:
             behavior_id: Logical behavior identifier
             input_json: JSON-serialized input arguments
-            output_text: LLM output to store
+            output_text: LLM output to store (or list of outputs for centroid)
             git_commit: Optional git commit hash
             
         Returns:
             snapshot_id: The computed snapshot ID
         """
-        # Compute embedding
-        embedding = self.embedder.embed_single(output_text)
+        # Compute embedding (handles centroid math if list)
+        embedding = self._compute_embedding(output_text)
+        
+        # Serialize list if necessary for SQLite
+        text_to_store = json.dumps(output_text) if isinstance(output_text, list) else output_text
         
         # Save to storage
         snapshot_id = self.storage.save_snapshot(
             behavior_id=behavior_id,
             input_json=input_json,
-            output_text=output_text,
+            output_text=text_to_store,
             embedding=embedding,
             model_name=self.embedder.model_name,
             git_commit=git_commit
