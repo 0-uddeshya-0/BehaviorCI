@@ -66,6 +66,11 @@ class StorageError(BehaviorCIError):
     pass
 
 
+class ReplayError(BehaviorCIError):
+    """Raised when replaying a behavior fails."""
+    pass
+
+
 class ModelMismatchWarning(Warning):
     """Warning issued when comparing snapshots from different embedding models."""
     def __init__(self, message: str, suggestion: Optional[str] = None):
