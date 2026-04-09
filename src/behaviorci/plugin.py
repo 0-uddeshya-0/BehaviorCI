@@ -11,12 +11,14 @@ BUG FIXES APPLIED:
            The previous implementation had a hook that called the test runner,
            which conflicted with pytest's default runner causing duplicate executions.
 - FIX-009: Added mandatory output review block on snapshot recording to prevent blind baselines.
+- FIX-010: Formats Centroid Baseline outputs safely for terminal reports.
 """
 
 import pytest
 import os
 import subprocess
-from typing import Optional, Dict
+import json
+from typing import Optional, Dict, Union, List
 
 from .api import get_behavior_config, serialize_inputs
 from .storage import get_storage, reset_all_storage
@@ -174,6 +176,10 @@ def pytest_runtest_makereport(item, call):
     record_missing = item.config.behaviorci_record_missing
 
     try:
+        # Format display text for Centroids
+        display_text = output_text[0] if isinstance(output_text, list) else output_text
+        centroid_msg = f" (Centroid of {len(output_text)} samples)" if isinstance(output_text, list) else ""
+
         if record_mode:
             git_commit = _get_git_commit()
             snapshot_id = comparator.record_snapshot(
@@ -185,12 +191,12 @@ def pytest_runtest_makereport(item, call):
 
             report.sections.append((
                 "BehaviorCI",
-                f"✅ Recorded snapshot: {behavior_id}\n"
+                f"✅ Recorded snapshot: {behavior_id}{centroid_msg}\n"
                 f"Snapshot ID: {snapshot_id[:16]}...\n\n"
-                f"⚠️ URGENT: Review the captured output below to ensure it is correct.\n"
+                f"⚠️ URGENT: Review the primary captured output below to ensure it is correct.\n"
                 f"This will be your new ground truth for future tests.\n"
                 f"{'='*50}\n"
-                f"{output_text}\n"
+                f"{display_text}\n"
                 f"{'='*50}"
             ))
         else:
@@ -215,18 +221,18 @@ def pytest_runtest_makereport(item, call):
 
                 report.sections.append((
                     "BehaviorCI",
-                    f"✅ Auto-recorded missing snapshot: {behavior_id}\n"
+                    f"✅ Auto-recorded missing snapshot: {behavior_id}{centroid_msg}\n"
                     f"Snapshot ID: {snapshot_id[:16]}...\n\n"
-                    f"⚠️ URGENT: Review the captured output below to ensure it is correct.\n"
+                    f"⚠️ URGENT: Review the primary captured output below to ensure it is correct.\n"
                     f"This will be your new ground truth for future tests.\n"
                     f"{'='*50}\n"
-                    f"{output_text}\n"
+                    f"{display_text}\n"
                     f"{'='*50}\n"
                     f"(Use --behaviorci-record to record all, --behaviorci for strict mode)"
                 ))
             else:
                 report_lines = [
-                    f"Behavior: {result.behavior_id}",
+                    f"Behavior: {result.behavior_id}{centroid_msg}",
                     f"Snapshot ID: {result.snapshot_id[:16]}...",
                     f"Similarity: {result.similarity:.4f}",
                     f"Threshold: {result.effective_threshold:.4f}",
@@ -278,8 +284,19 @@ def _get_git_commit() -> Optional[str]:
     return None
 
 
-def _generate_diff(stored_output: str, current_output: str, similarity: float) -> str:
+def _generate_diff(stored_output: str, current_output: Union[str, List[str]], similarity: float) -> str:
     """Generate a readable diff between stored and current output."""
+    
+    # Extract strings if inputs are Centroid lists
+    current_display = current_output[0] if isinstance(current_output, list) else current_output
+    
+    # Try to parse stored JSON if it was a centroid array
+    try:
+        stored_parsed = json.loads(stored_output)
+        stored_display = stored_parsed[0] if isinstance(stored_parsed, list) else stored_output
+    except (json.JSONDecodeError, TypeError):
+        stored_display = stored_output
+
     lines = [
         "=" * 50,
         "BEHAVIORAL REGRESSION DETECTED",
@@ -287,20 +304,20 @@ def _generate_diff(stored_output: str, current_output: str, similarity: float) -
         "",
         f"Semantic similarity: {similarity:.4f}",
         "",
-        "--- STORED OUTPUT ---",
-        stored_output[:500],
+        "--- STORED OUTPUT (Primary Sample) ---",
+        stored_display[:500],
     ]
 
-    if len(stored_output) > 500:
+    if len(stored_display) > 500:
         lines.append("... (truncated)")
 
     lines.extend([
         "",
-        "--- CURRENT OUTPUT ---",
-        current_output[:500],
+        "--- CURRENT OUTPUT (Primary Sample) ---",
+        current_display[:500],
     ])
 
-    if len(current_output) > 500:
+    if len(current_display) > 500:
         lines.append("... (truncated)")
 
     lines.extend([
