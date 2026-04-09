@@ -2,53 +2,40 @@
 
 import numpy as np
 import threading
-from typing import List, Union, Dict, Optional
+from typing import List, Union, Dict, Optional, Any
 from abc import ABC, abstractmethod
 
 from .exceptions import EmbeddingError
 
-# HIGH-001 FIX: Thread lock for embedder singleton cache
 _embedder_lock = threading.Lock()
 _embedder_cache: Dict[str, 'Embedder'] = {}
 _injected_embedder: Optional['Embedder'] = None
 
 DEFAULT_MODEL_NAME = 'sentence-transformers/all-MiniLM-L6-v2'
 
-
 class Embedder(ABC):
-    """Abstract base class for all embedding providers."""
-    
-    def __init__(self, model_name: str):
+    def __init__(self, model_name: str) -> None:
         self.model_name = model_name
         
     @abstractmethod
     def embed_single(self, text: str) -> np.ndarray:
-        """Compute embedding for a single text.
-        
-        MUST return a normalized float32 numpy array.
-        """
         pass
         
     def compute_similarity(self, a: np.ndarray, b: np.ndarray) -> float:
-        """Compute cosine similarity between two normalized embeddings."""
         similarity = float(np.dot(a, b))
         similarity = max(-1.0, min(1.0, similarity))
         return similarity
 
-
 class LocalEmbedder(Embedder):
-    """Local embedding model wrapper using sentence-transformers."""
-    
     DEFAULT_MODEL = DEFAULT_MODEL_NAME
     EMBEDDING_DIM = 384
     
-    def __init__(self, model_name: str = None):
+    def __init__(self, model_name: Optional[str] = None) -> None:
         super().__init__(model_name or self.DEFAULT_MODEL)
-        self._model = None
-        self._embedding_dim = None
+        self._model: Any = None
+        self._embedding_dim: Optional[int] = None
     
-    def _load_model(self):
-        """Lazy-load the embedding model."""
+    def _load_model(self) -> None:
         if self._model is None:
             try:
                 from sentence_transformers import SentenceTransformer
@@ -64,7 +51,6 @@ class LocalEmbedder(Embedder):
                 raise EmbeddingError(f"Failed to load model '{self.model_name}': {e}")
     
     def embed(self, texts: Union[str, List[str]]) -> np.ndarray:
-        """Compute embeddings for text(s)."""
         self._load_model()
         
         if isinstance(texts, str):
@@ -77,6 +63,7 @@ class LocalEmbedder(Embedder):
             raise EmbeddingError("Cannot embed empty text list")
         
         try:
+            assert self._model is not None
             embeddings = self._model.encode(
                 texts,
                 convert_to_numpy=True,
@@ -87,46 +74,29 @@ class LocalEmbedder(Embedder):
                 embeddings = embeddings.astype(np.float32)
             
             if single_input:
-                return embeddings[0]
-            return embeddings
+                return embeddings[0]  # type: ignore[no-any-return]
+            return embeddings  # type: ignore[no-any-return]
             
         except Exception as e:
             raise EmbeddingError(f"Embedding computation failed: {e}")
     
     def embed_single(self, text: str) -> np.ndarray:
-        """Compute embedding for a single text."""
         return self.embed(text)
     
     def get_dimension(self) -> int:
-        """Get embedding dimension."""
         self._load_model()
+        assert self._embedding_dim is not None
         return self._embedding_dim
     
     @property
     def is_loaded(self) -> bool:
-        """Check if model is loaded."""
         return self._model is not None
 
-
 def set_embedder(embedder: Embedder) -> None:
-    """Inject a custom embedder globally (e.g., OpenAI, Gemini, Cohere).
-    
-    This overrides the default local sentence-transformers embedder.
-    Call this in your conftest.py before tests run.
-    """
     global _injected_embedder
     _injected_embedder = embedder
 
-
-def get_embedder(model_name: str = None) -> Embedder:
-    """Get the injected embedder or create a cached local instance.
-    
-    Args:
-        model_name: Model name (uses default if not specified)
-        
-    Returns:
-        Embedder instance
-    """
+def get_embedder(model_name: Optional[str] = None) -> Embedder:
     if _injected_embedder is not None:
         return _injected_embedder
         
@@ -137,9 +107,7 @@ def get_embedder(model_name: str = None) -> Embedder:
             _embedder_cache[model_name] = LocalEmbedder(model_name)
         return _embedder_cache[model_name]
 
-
-def reset_embedder(model_name: str = None) -> None:
-    """Reset embedder cache and injected embedder (useful for testing)."""
+def reset_embedder(model_name: Optional[str] = None) -> None:
     global _injected_embedder
     with _embedder_lock:
         _injected_embedder = None
