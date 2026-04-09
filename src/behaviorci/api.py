@@ -6,6 +6,7 @@ CRITICAL: Pytest ignores return values by default. We use function attributes
 
 import functools
 import json
+import inspect
 from typing import Callable, Optional, List, Any, Tuple
 
 from .models import BehaviorConfig, CapturedBehavior
@@ -64,6 +65,7 @@ def behavior(
     
     The decorated function's RETURN VALUE is captured as the LLM output.
     The function MUST return a string (the LLM output to compare).
+    Supports both sync and async test functions.
     
     Args:
         behavior_id: Logical behavior identifier (e.g., "refund_classifier")
@@ -86,11 +88,9 @@ def behavior(
         raise ConfigurationError("threshold must be between 0.0 and 1.0")
     
     def decorator(func: Callable) -> Callable:
-        @functools.wraps(func)
-        def wrapper(*args, **kwargs):
-            # Execute the test function
-            result = func(*args, **kwargs)
-            
+        
+        # Helper to apply validation and caching uniformly to both sync and async wrappers
+        def _validate_and_store(wrapper_func: Callable, result: Any, args: Tuple, kwargs: dict):
             # CRITICAL: Validate return value
             if result is None:
                 raise ConfigurationError(
@@ -105,17 +105,30 @@ def behavior(
                 )
             
             # Serialize inputs (FAIL FAST if not JSON-serializable)
-            try:
-                input_json = serialize_inputs(args, kwargs)
-            except SerializationError:
-                raise  # Re-raise with context
+            input_json = serialize_inputs(args, kwargs)
             
             # Store result for pytest plugin to retrieve via item.obj._behaviorci_result
-            wrapper._behaviorci_result = result
-            wrapper._behaviorci_input = (args, kwargs)
-            wrapper._behaviorci_input_json = input_json
+            wrapper_func._behaviorci_result = result
+            wrapper_func._behaviorci_input = (args, kwargs)
+            wrapper_func._behaviorci_input_json = input_json
+
+        # BRANCH 1: Async test support
+        if inspect.iscoroutinefunction(func):
+            @functools.wraps(func)
+            async def async_wrapper(*args, **kwargs):
+                result = await func(*args, **kwargs)
+                _validate_and_store(async_wrapper, result, args, kwargs)
+                return result
+            wrapper = async_wrapper
             
-            return result
+        # BRANCH 2: Standard Sync test support
+        else:
+            @functools.wraps(func)
+            def sync_wrapper(*args, **kwargs):
+                result = func(*args, **kwargs)
+                _validate_and_store(sync_wrapper, result, args, kwargs)
+                return result
+            wrapper = sync_wrapper
         
         # Attach configuration for pytest plugin discovery
         wrapper._behavior_config = BehaviorConfig(
