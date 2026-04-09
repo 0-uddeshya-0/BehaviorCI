@@ -1,5 +1,17 @@
 <div align="center">
   <h1>🤖 BehaviorCI</h1>
+<div align="center">
+  </div>
+
+<br>
+
+<div align="center">
+  <a href="https://github.com/0-uddeshya-0/BehaviorCI"><img src="https://img.shields.io/badge/Status-Alpha-orange.svg?style=for-the-badge" alt="Status: Alpha"></a>
+</div>
+
+> ⚠️ **Project Status: Alpha** — BehaviorCI is fully functional for local development and CI pipelines, but the API and storage mechanisms are actively stabilizing. Breaking changes may occur before v1.0. We strongly recommend pinning your dependency version (e.g., `behaviorci==0.1.0`).
+
+<hr/>
 
   <p>
     <strong>pytest for LLM behavior</strong><br>
@@ -8,7 +20,6 @@
 
   <p>
     <a href="https://pypi.org/project/behaviorci/"><img src="https://img.shields.io/pypi/v/behaviorci.svg?style=for-the-badge&color=blue" alt="PyPI"></a>
-    <a href="https://github.com/0-uddeshya-0/BehaviorCI/actions"><img src="https://img.shields.io/github/actions/workflow/status/0-uddeshya-0/BehaviorCI/ci.yml?style=for-the-badge&logo=github" alt="CI"></a>
     <a href="https://codecov.io/gh/0-uddeshya-0/BehaviorCI"><img src="https://img.shields.io/codecov/c/gh/0-uddeshya-0/BehaviorCI?style=for-the-badge&logo=codecov" alt="Coverage"></a>
     <a href="https://opensource.org/licenses/MIT"><img src="https://img.shields.io/badge/License-MIT-yellow.svg?style=for-the-badge" alt="License"></a>
   </p>
@@ -293,6 +304,23 @@ BehaviorCI's WAL-mode SQLite database natively supports concurrent execution wit
 pip install pytest-xdist
 pytest --behaviorci -n 4  # Safe 4-worker execution
 ```
+
+---
+
+## ⚠️ Known Limitations & Team Workflows
+
+### 1. The Git + SQLite Merge Conflict
+Currently, BehaviorCI stores all snapshots in a binary SQLite database (`.behaviorci/behaviorci.db`). Because it is a binary file, **Git cannot automatically resolve merge conflicts** if multiple developers record new snapshots on different branches simultaneously.
+
+**Recommended Workflow for Teams:**
+* **Read-Only in CI:** Running `pytest --behaviorci` in your GitHub Actions/CI pipeline for Pull Requests works perfectly and safely.
+* **Record on Main:** To avoid binary merge conflicts, only run `pytest --behaviorci-record` or `--behaviorci-update` locally on the `main` branch. Alternatively, designate a single maintainer to handle all snapshot updates.
+* *(Note: We are actively exploring Git-friendly JSON file snapshots for v0.2.0 to fully resolve this).*
+
+### 2. Handling Non-Determinism (Creative Outputs)
+If your LLM prompt has high variance (e.g., high temperature, creative writing), do not force a high threshold. BehaviorCI features **Variance-Aware Thresholds**—if a test historically shows high variance, the tool automatically lowers the effective threshold. 
+* For strict formatting (JSON, low temperature), use `@behavior(threshold=0.95)`
+* For creative text, use `@behavior(threshold=0.60)`
 
 ---
 
