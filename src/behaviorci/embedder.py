@@ -4,16 +4,18 @@ import numpy as np
 import threading
 from typing import List, Union, Dict, Optional, Any
 from abc import ABC, abstractmethod
+import warnings
 
 from .exceptions import EmbeddingError
 
 _embedder_lock = threading.Lock()
-_embedder_cache: Dict[str, 'Embedder'] = {}
-_injected_embedder: Optional['Embedder'] = None
+_embedder_cache: Dict[str, 'BaseEmbedder'] = {}
+_injected_embedder: Optional['BaseEmbedder'] = None
 
 DEFAULT_MODEL_NAME = 'sentence-transformers/all-MiniLM-L6-v2'
 
-class Embedder(ABC):
+class BaseEmbedder(ABC):
+    """Abstract Base Class for all Embedders."""
     def __init__(self, model_name: str) -> None:
         self.model_name = model_name
         
@@ -26,7 +28,8 @@ class Embedder(ABC):
         similarity = max(-1.0, min(1.0, similarity))
         return similarity
 
-class LocalEmbedder(Embedder):
+class Embedder(BaseEmbedder):
+    """Concrete local embedding model wrapper."""
     DEFAULT_MODEL = DEFAULT_MODEL_NAME
     EMBEDDING_DIM = 384
     
@@ -40,7 +43,11 @@ class LocalEmbedder(Embedder):
             try:
                 from sentence_transformers import SentenceTransformer
                 self._model = SentenceTransformer(self.model_name)
-                self._embedding_dim = self._model.get_sentence_embedding_dimension()
+                # Suppress the FutureWarning by dynamically fetching the new method if available
+                get_dim = getattr(self._model, "get_embedding_dimension", None)
+                if get_dim is None:
+                    get_dim = self._model.get_sentence_embedding_dimension
+                self._embedding_dim = get_dim()
             except ImportError:
                 raise EmbeddingError(
                     "sentence-transformers is not installed. "
@@ -92,11 +99,11 @@ class LocalEmbedder(Embedder):
     def is_loaded(self) -> bool:
         return self._model is not None
 
-def set_embedder(embedder: Embedder) -> None:
+def set_embedder(embedder: BaseEmbedder) -> None:
     global _injected_embedder
     _injected_embedder = embedder
 
-def get_embedder(model_name: Optional[str] = None) -> Embedder:
+def get_embedder(model_name: Optional[str] = None) -> BaseEmbedder:
     if _injected_embedder is not None:
         return _injected_embedder
         
@@ -104,7 +111,7 @@ def get_embedder(model_name: Optional[str] = None) -> Embedder:
     
     with _embedder_lock:
         if model_name not in _embedder_cache:
-            _embedder_cache[model_name] = LocalEmbedder(model_name)
+            _embedder_cache[model_name] = Embedder(model_name)
         return _embedder_cache[model_name]
 
 def reset_embedder(model_name: Optional[str] = None) -> None:
