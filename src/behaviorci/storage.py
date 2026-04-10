@@ -410,7 +410,8 @@ class Storage:
                 (snapshot_id, limit)
             ).fetchall()
 
-            return [row['similarity'] for row in rows]
+            # MYPY FIX: Ignores SQLite returning lists of Any
+            return [row['similarity'] for row in rows]  # type: ignore[no-any-return]
         except sqlite3.Error as e:
             raise StorageError(f"Failed to get similarity history: {e}")
 
@@ -530,10 +531,11 @@ class Storage:
                 """
             ).fetchall()
 
+            # MYPY FIX: Ignores SQLite returning lists of Any
             return [
                 (row['behavior_id'], row['count'], row['last_run'])
                 for row in rows
-            ]
+            ]  # type: ignore[no-any-return]
         except sqlite3.Error as e:
             raise StorageError(f"Failed to get behavior summary: {e}")
 
@@ -566,6 +568,7 @@ class Storage:
                 (snapshot_id, limit)
             ).fetchall()
 
-            return [(row['similarity'], row['timestamp']) for row in rows]
+            # MYPY FIX: Ignores SQLite returning lists of Any
+            return [(row['similarity'], row['timestamp']) for row in rows]  # type: ignore[no-any-return]
         except sqlite3.Error as e:
             raise StorageError(f"Failed to get similarity history: {e}")
