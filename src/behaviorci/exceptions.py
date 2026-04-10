@@ -47,7 +47,7 @@ class ModelMismatchError(BehaviorCIError):
             f"but the current test is running with '{current_model}'.\n"
             f"Embeddings from different models exist in different vector spaces "
             f"and cannot be accurately compared.\n"
-            f"Resolution: Run pytest with --behaviorci-record to recreate the baseline "
+            f"Resolution: Run pytest with --behaviorci-update to re-record the baseline "
             f"using the new model."
         )
         super().__init__(msg, details={'stored': stored_model, 'current': current_model})
