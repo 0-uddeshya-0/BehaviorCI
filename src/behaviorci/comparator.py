@@ -22,7 +22,8 @@ class Comparator:
             norm = np.linalg.norm(centroid)
             if norm > 0:
                 centroid = centroid / norm
-            return centroid.astype(np.float32)
+            # MYPY FIX: Numpy array operations return 'Any' to strict type checkers
+            return centroid.astype(np.float32)  # type: ignore[no-any-return]
         return self.embedder.embed_single(text)
     
     def check_lexical(
