@@ -275,7 +275,7 @@ import numpy as np
 from behaviorci.embedder import Embedder, set_embedder
 from openai import OpenAI
 
-class OpenAIEmbedder(Embedder):
+class OpenAIEmbedder(BaseEmbedder):
     def __init__(self):
         super().__init__(model_name="text-embedding-3-small")
         self.client = OpenAI()
