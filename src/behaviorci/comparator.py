@@ -7,11 +7,11 @@ from typing import List, Optional, Union, Tuple
 
 from .models import ComparisonResult, Snapshot
 from .storage import Storage
-from .embedder import Embedder, get_embedder
+from .embedder import BaseEmbedder, get_embedder
 from .exceptions import ComparisonError, ModelMismatchError, ModelMismatchWarning
 
 class Comparator:
-    def __init__(self, storage: Storage, embedder: Optional[Embedder] = None) -> None:
+    def __init__(self, storage: Storage, embedder: Optional[BaseEmbedder] = None) -> None:
         self.storage = storage
         self.embedder = embedder or get_embedder()
     
