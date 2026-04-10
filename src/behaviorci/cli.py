@@ -1,8 +1,9 @@
 """Command-line interface for BehaviorCI."""
 
-import typer
 import subprocess
 from pathlib import Path
+
+import typer
 
 from .storage import get_storage, reset_all_storage
 

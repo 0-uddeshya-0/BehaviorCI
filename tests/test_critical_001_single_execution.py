@@ -64,6 +64,7 @@ def test_makereport_uses_hookwrapper():
     VERIFIED: The decorator includes hookwrapper=True in source code.
     """
     import inspect
+
     from behaviorci import plugin
 
     source = inspect.getsource(plugin.pytest_runtest_makereport)

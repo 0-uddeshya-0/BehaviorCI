@@ -4,14 +4,15 @@ TASK 3: Users expect @pytest.mark.parametrize to work with @behavior.
 Need to verify plugin handles this correctly.
 """
 
-import sys
 import os
+import sys
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "examples"))
 
-import pytest
-import tempfile
 import subprocess
+import tempfile
+
+import pytest
 
 from behaviorci import behavior
 from behaviorci.storage import get_storage, reset_all_storage
@@ -46,6 +47,7 @@ def test_parametrized_creates_distinct_snapshots():
 
     # Simulate recording snapshots for each parameter
     from mock_embedder import MockEmbedder
+
     from behaviorci.comparator import Comparator
 
     embedder = MockEmbedder()
@@ -85,6 +87,7 @@ def test_parametrized_no_cross_contamination():
     storage = get_storage(":memory:")
 
     from mock_embedder import MockEmbedder
+
     from behaviorci.comparator import Comparator
 
     embedder = MockEmbedder()

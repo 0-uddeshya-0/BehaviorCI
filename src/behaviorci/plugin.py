@@ -14,17 +14,18 @@ BUG FIXES APPLIED:
 - FIX-010: Formats Centroid Baseline outputs safely for terminal reports.
 """
 
-import pytest
+import json
 import os
 import subprocess
-import json
-from typing import Optional, Dict, Union, List, Any
+from typing import Any, Dict, List, Optional, Union
+
+import pytest
 
 from .api import get_behavior_config, serialize_inputs
-from .storage import get_storage, reset_all_storage
-from .embedder import get_embedder, DEFAULT_MODEL_NAME
 from .comparator import Comparator
-from .exceptions import BehaviorCIError, SerializationError, ConfigurationError
+from .embedder import DEFAULT_MODEL_NAME, get_embedder
+from .exceptions import BehaviorCIError, ConfigurationError, SerializationError
+from .storage import get_storage, reset_all_storage
 
 # Stash keys for passing data between hooks
 CONFIG_KEY = pytest.StashKey[dict]()

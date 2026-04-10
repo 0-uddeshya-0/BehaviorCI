@@ -1,10 +1,11 @@
 """Embedding computation using sentence-transformers or injected APIs."""
 
-import numpy as np
 import threading
-from typing import List, Union, Dict, Optional, Any
-from abc import ABC, abstractmethod
 import warnings
+from abc import ABC, abstractmethod
+from typing import Any, Dict, List, Optional, Union
+
+import numpy as np
 
 from .exceptions import EmbeddingError
 

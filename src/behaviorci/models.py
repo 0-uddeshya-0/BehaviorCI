@@ -1,9 +1,10 @@
 """Pydantic models for BehaviorCI."""
 
-from typing import Any, Tuple, Dict, List, Optional, Union
-from pydantic import BaseModel, Field, ConfigDict
 from datetime import datetime
+from typing import Any, Dict, List, Optional, Tuple, Union
+
 import numpy as np
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class Snapshot(BaseModel):

@@ -1,8 +1,9 @@
 """Test for regression detection demonstration."""
 
 import pytest
-from behaviorci import behavior
 from fake_llm import get_llm, reset_llm
+
+from behaviorci import behavior
 
 
 @pytest.fixture(autouse=True)

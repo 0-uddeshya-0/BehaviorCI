@@ -7,8 +7,9 @@ CI fails with "No snapshot found". Added --behaviorci-record-missing flag that:
 3. Reports which snapshots were newly recorded
 """
 
-import tempfile
 import os
+import tempfile
+
 import numpy as np
 import pytest
 
@@ -37,9 +38,10 @@ def test_record_missing_creates_snapshot():
 
     VERIFIED: pytest_runtest_makereport auto-records when record_missing=True
     """
-    from behaviorci.storage import get_storage, reset_all_storage
-    from behaviorci.comparator import Comparator
     from mock_embedder import MockEmbedder
+
+    from behaviorci.comparator import Comparator
+    from behaviorci.storage import get_storage, reset_all_storage
 
     with tempfile.TemporaryDirectory() as tmpdir:
         db_path = os.path.join(tmpdir, "test.db")
@@ -99,9 +101,10 @@ def test_record_missing_vs_record_mode():
 
     VERIFIED: record_mode=True creates new snapshot, record_missing only for missing
     """
-    from behaviorci.storage import get_storage, reset_all_storage
-    from behaviorci.comparator import Comparator
     from mock_embedder import MockEmbedder
+
+    from behaviorci.comparator import Comparator
+    from behaviorci.storage import get_storage, reset_all_storage
 
     with tempfile.TemporaryDirectory() as tmpdir:
         db_path = os.path.join(tmpdir, "test.db")
@@ -149,6 +152,7 @@ def test_record_missing_integration():
     """
     import subprocess
     import tempfile
+
     import pytest
 
     # Skip this test in CI - subprocess tests are flaky

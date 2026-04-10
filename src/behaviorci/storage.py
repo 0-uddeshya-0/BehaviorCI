@@ -15,18 +15,19 @@ BUG FIXES APPLIED:
            and directory creation + WAL init are skipped for in-memory databases.
 """
 
-import sqlite3
 import hashlib
 import json
 import os
+import sqlite3
 import threading
-from pathlib import Path
-from typing import Optional, List, Dict
 from datetime import datetime
+from pathlib import Path
+from typing import Dict, List, Optional
+
 import numpy as np
 
-from .models import Snapshot, SimilarityRecord
-from .exceptions import StorageError, SnapshotNotFoundError
+from .exceptions import SnapshotNotFoundError, StorageError
+from .models import SimilarityRecord, Snapshot
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS snapshots (

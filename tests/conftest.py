@@ -1,8 +1,9 @@
 """Pytest configuration for BehaviorCI tests."""
 
-import pytest
-import sys
 import os
+import sys
+
+import pytest
 
 # Add tests/examples to path for mock_embedder
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "examples"))
@@ -15,8 +16,8 @@ def reset_singletons():
     WHY: BUG-003 - Singleton state must be reset between tests
     to ensure test isolation.
     """
-    from behaviorci.storage import reset_all_storage
     from behaviorci.embedder import reset_embedder
+    from behaviorci.storage import reset_all_storage
 
     # Reset before test
     reset_all_storage()

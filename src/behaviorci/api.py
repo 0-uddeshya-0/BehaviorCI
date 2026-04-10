@@ -1,12 +1,12 @@
 """Public API for BehaviorCI - the @behavior decorator."""
 
 import functools
-import json
 import inspect
-from typing import Callable, Optional, List, Any, Tuple
+import json
+from typing import Any, Callable, List, Optional, Tuple
 
+from .exceptions import ConfigurationError, SerializationError
 from .models import BehaviorConfig, CapturedBehavior
-from .exceptions import SerializationError, ConfigurationError
 
 
 def serialize_inputs(args: Tuple, kwargs: dict) -> str:

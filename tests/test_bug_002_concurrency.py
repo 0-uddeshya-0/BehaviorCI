@@ -10,8 +10,9 @@ FIX: Enable WAL (Write-Ahead Logging) mode with:
 """
 
 import multiprocessing
-import tempfile
 import os
+import tempfile
+
 import numpy as np
 import pytest
 
@@ -46,6 +47,7 @@ def test_wal_mode_enabled():
     VERIFIED: _init_db() sets PRAGMA journal_mode=WAL
     """
     import sqlite3
+
     from behaviorci.storage import Storage
 
     with tempfile.TemporaryDirectory() as tmpdir:
@@ -132,6 +134,7 @@ def test_busy_timeout_set():
     VERIFIED: _init_db() sets PRAGMA busy_timeout=5000
     """
     import sqlite3
+
     from behaviorci.storage import Storage
 
     with tempfile.TemporaryDirectory() as tmpdir:

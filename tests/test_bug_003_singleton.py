@@ -9,9 +9,10 @@ FIX: Implement Storage as singleton per database path with:
 - Thread-local connections for thread safety
 """
 
-import tempfile
 import os
+import tempfile
 import threading
+
 import numpy as np
 import pytest
 

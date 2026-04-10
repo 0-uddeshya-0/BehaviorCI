@@ -6,9 +6,10 @@ when save_snapshot() was called (uses datetime at line 110).
 FIX: Moved `from datetime import datetime` to top of file.
 """
 
-import numpy as np
-import tempfile
 import os
+import tempfile
+
+import numpy as np
 
 
 def test_datetime_import_at_module_load():

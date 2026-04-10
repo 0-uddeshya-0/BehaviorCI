@@ -4,8 +4,9 @@ FIX-005: Same behavior_id in different files causes silent overwrites.
 Added validation at collection time in pytest_collection_modifyitems.
 """
 
-import tempfile
 import os
+import tempfile
+
 import pytest
 
 

@@ -1,14 +1,15 @@
 """Comparison logic for behavioral regression testing."""
 
-import numpy as np
 import json
 import warnings
-from typing import List, Optional, Union, Tuple
+from typing import List, Optional, Tuple, Union
 
-from .models import ComparisonResult, Snapshot
-from .storage import Storage
+import numpy as np
+
 from .embedder import BaseEmbedder, get_embedder
 from .exceptions import ComparisonError, ModelMismatchError, ModelMismatchWarning
+from .models import ComparisonResult, Snapshot
+from .storage import Storage
 
 
 class Comparator:

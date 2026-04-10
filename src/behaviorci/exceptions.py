@@ -1,6 +1,6 @@
 """Custom exceptions for BehaviorCI."""
 
-from typing import Optional, Dict, Any
+from typing import Any, Dict, Optional
 
 
 class BehaviorCIError(Exception):

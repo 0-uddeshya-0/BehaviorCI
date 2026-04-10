@@ -10,17 +10,18 @@ FIX: Changed to max(0.5, min(base_threshold, variance_floor))
 VERIFICATION: These tests prove high variance lowers threshold, low variance keeps base.
 """
 
-import sys
 import os
+import sys
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "examples"))
 
-import numpy as np
 import tempfile
 
-from behaviorci.storage import get_storage, reset_all_storage
-from behaviorci.comparator import Comparator
+import numpy as np
 from mock_embedder import MockEmbedder
+
+from behaviorci.comparator import Comparator
+from behaviorci.storage import get_storage, reset_all_storage
 
 
 def test_high_variance_lowers_threshold():

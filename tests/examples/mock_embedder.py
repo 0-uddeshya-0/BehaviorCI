@@ -1,8 +1,9 @@
 """Mock embedder for testing without loading sentence-transformers model."""
 
-import numpy as np
-from typing import List, Union
 import hashlib
+from typing import List, Union
+
+import numpy as np
 
 
 class MockEmbedder:

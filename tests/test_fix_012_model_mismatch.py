@@ -4,17 +4,17 @@ TASK 1: Comparing embeddings from different models is mathematically invalid
 because they exist in different vector spaces. This should raise a hard error.
 """
 
-import sys
 import os
+import sys
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "examples"))
 
-import pytest
 import numpy as np
+import pytest
 
-from behaviorci.storage import get_storage, reset_all_storage
 from behaviorci.comparator import Comparator
 from behaviorci.exceptions import ModelMismatchError
+from behaviorci.storage import get_storage, reset_all_storage
 
 
 class MockEmbedderA:

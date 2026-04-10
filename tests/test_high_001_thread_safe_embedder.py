@@ -10,6 +10,7 @@ should create only 1 Embedder instance.
 
 import threading
 import time
+
 from behaviorci.embedder import get_embedder, reset_embedder
 
 
