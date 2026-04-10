@@ -17,10 +17,10 @@ def fresh_llm():
 @behavior("refund_classifier_regression_demo", threshold=0.85)
 def test_refund_classification_regression():
     """This test simulates a behavioral regression.
-    
-    The original test in test_app.py returns 'REFUND_REQUEST' but this 
+
+    The original test in test_app.py returns 'REFUND_REQUEST' but this
     one returns 'BILLING_QUESTION' to simulate a regression in the LLM behavior.
-    
+
     NOTE: Uses unique behavior_id to avoid conflict with FIX-005 validation.
     """
     llm = get_llm()

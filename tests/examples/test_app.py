@@ -20,6 +20,7 @@ def fresh_llm():
 # Basic Behavior Tests
 # ============================================================================
 
+
 @behavior("refund_classifier", threshold=0.85)
 def test_refund_classification():
     """Test that refund requests are classified correctly."""
@@ -48,11 +49,8 @@ def test_technical_classification():
 # Tests with Lexical Constraints
 # ============================================================================
 
-@behavior(
-    "refund_response",
-    threshold=0.85,
-    must_contain=["refund", "help"]
-)
+
+@behavior("refund_response", threshold=0.85, must_contain=["refund", "help"])
 def test_refund_response_content():
     """Test refund response contains required phrases."""
     llm = get_llm()
@@ -61,10 +59,7 @@ def test_refund_response_content():
 
 
 @behavior(
-    "support_response",
-    threshold=0.85,
-    must_contain=["help"],
-    must_not_contain=["error", "fail"]
+    "support_response", threshold=0.85, must_contain=["help"], must_not_contain=["error", "fail"]
 )
 def test_support_response_safety():
     """Test support response is safe and helpful."""
@@ -76,6 +71,7 @@ def test_support_response_safety():
 # ============================================================================
 # Tests with Different Thresholds
 # ============================================================================
+
 
 @behavior("strict_greeting", threshold=0.95)
 def test_strict_greeting():
@@ -97,6 +93,7 @@ def test_lenient_response():
 # Edge Case Tests
 # ============================================================================
 
+
 @behavior("unknown_input", threshold=0.85)
 def test_unknown_classification():
     """Test classification of unknown input."""
@@ -117,6 +114,7 @@ def test_greeting_classification():
 # Tests for Validation
 # ============================================================================
 
+
 # This test should fail in check mode if output changes
 def test_without_behavior():
     """Regular pytest test (not a behavior test)."""
@@ -129,19 +127,20 @@ def test_without_behavior():
 # Demonstration Tests
 # ============================================================================
 
+
 @behavior("demo_refund", threshold=0.85, must_contain=["refund"])
 def test_demo_refund_scenario():
     """Demo test showing full BehaviorCI workflow.
-    
+
     1. First run: pytest --behaviorci-record (creates snapshot)
     2. Normal runs: pytest --behaviorci (checks against snapshot)
     3. If behavior changes: pytest --behaviorci-update (updates snapshot)
     """
     llm = get_llm()
-    
+
     # Simulate a customer service interaction
     classification = llm.classify("I want my money back")
     response = llm.generate("refund request")
-    
+
     # Return the combined output
     return f"[{classification}] {response}"

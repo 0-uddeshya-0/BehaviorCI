@@ -65,10 +65,10 @@ _MEMORY_PATH = ":memory:"
 # RISKS: Must call reset_storage() in tests to avoid state leakage
 # VERIFIED BY: tests/test_bug_003_singleton.py
 _storage_lock = threading.Lock()
-_storage_instances: Dict[str, 'Storage'] = {}
+_storage_instances: Dict[str, "Storage"] = {}
 
 
-def get_storage(db_path: Optional[str] = None) -> 'Storage':
+def get_storage(db_path: Optional[str] = None) -> "Storage":
     """Get or create Storage singleton for given path.
 
     WHY: BUG-003 - Each Storage() instantiation opens a new SQLite connection.
@@ -89,7 +89,7 @@ def get_storage(db_path: Optional[str] = None) -> 'Storage':
         Storage singleton instance for the given path
     """
     if db_path is None:
-        db_path = os.path.join('.behaviorci', 'behaviorci.db')
+        db_path = os.path.join(".behaviorci", "behaviorci.db")
 
     # Normalise path for consistent lookup, but leave :memory: unchanged —
     # Path(":memory:").resolve() produces an incorrect filesystem path.
@@ -109,7 +109,7 @@ def reset_storage(db_path: Optional[str] = None) -> None:
         db_path: Path to SQLite database. If None, resets default path.
     """
     if db_path is None:
-        db_path = os.path.join('.behaviorci', 'behaviorci.db')
+        db_path = os.path.join(".behaviorci", "behaviorci.db")
 
     if db_path != _MEMORY_PATH:
         db_path = str(Path(db_path).resolve())
@@ -128,7 +128,7 @@ def reset_all_storage() -> None:
 def compute_snapshot_id(behavior_id: str, input_json: str) -> str:
     """Compute unique snapshot ID from behavior_id and canonical input JSON."""
     data = f"{behavior_id}:{input_json}"
-    return hashlib.sha256(data.encode('utf-8')).hexdigest()
+    return hashlib.sha256(data.encode("utf-8")).hexdigest()
 
 
 class Storage:
@@ -156,9 +156,9 @@ class Storage:
                      Pass ":memory:" for a true in-memory database (tests only).
         """
         if db_path is None:
-            db_path = os.path.join('.behaviorci', 'behaviorci.db')
+            db_path = os.path.join(".behaviorci", "behaviorci.db")
 
-        self._is_memory = (db_path == _MEMORY_PATH)
+        self._is_memory = db_path == _MEMORY_PATH
         self.db_path = Path(db_path)
 
         # FIX-008: Skip directory creation for :memory: — it is not a real path.
@@ -191,11 +191,9 @@ class Storage:
         Returns:
             Thread-local SQLite connection
         """
-        if not hasattr(self._local, 'connection') or self._local.connection is None:
+        if not hasattr(self._local, "connection") or self._local.connection is None:
             self._local.connection = sqlite3.connect(
-                str(self.db_path),
-                uri=False,
-                detect_types=sqlite3.PARSE_DECLTYPES
+                str(self.db_path), uri=False, detect_types=sqlite3.PARSE_DECLTYPES
             )
             self._local.connection.row_factory = sqlite3.Row
             # FIX-007: These PRAGMAs must be set on every new connection.
@@ -231,7 +229,7 @@ class Storage:
         RISKS: WAL creates .db-wal and .db-shm files that must be handled in CI.
 
         VERIFIED BY: tests/test_bug_002_concurrency.py
-        
+
         # FIX-008: :memory: databases don't support WAL mode and don't need it —
         # they are single-process by definition. Schema is created per-connection
         # in _get_connection() instead.
@@ -256,12 +254,13 @@ class Storage:
             except sqlite3.OperationalError as e:
                 if "database is locked" in str(e) and attempt < retries - 1:
                     import time
+
                     time.sleep(0.1 * (attempt + 1))  # exponential-ish backoff
                     continue
                 raise StorageError(f"Failed to initialize database: {e}")
             except sqlite3.Error as e:
                 raise StorageError(f"Failed to initialize database: {e}")
-       
+
     def save_snapshot(
         self,
         behavior_id: str,
@@ -269,7 +268,7 @@ class Storage:
         output_text: str,
         embedding: np.ndarray,
         model_name: str,
-        git_commit: Optional[str] = None
+        git_commit: Optional[str] = None,
     ) -> str:
         """Save a new snapshot, overwriting any existing one.
 
@@ -306,8 +305,16 @@ class Storage:
                 (id, behavior_id, input_json, output_text, embedding, model_name, created_at, git_commit)
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                 """,
-                (snapshot_id, behavior_id, input_json, output_text, embedding_blob,
-                 model_name, created_at, git_commit)
+                (
+                    snapshot_id,
+                    behavior_id,
+                    input_json,
+                    output_text,
+                    embedding_blob,
+                    model_name,
+                    created_at,
+                    git_commit,
+                ),
             )
             conn.commit()
         except sqlite3.Error as e:
@@ -329,23 +336,20 @@ class Storage:
         """
         try:
             conn = self._get_connection()
-            row = conn.execute(
-                "SELECT * FROM snapshots WHERE id = ?",
-                (snapshot_id,)
-            ).fetchone()
+            row = conn.execute("SELECT * FROM snapshots WHERE id = ?", (snapshot_id,)).fetchone()
 
             if row is None:
                 raise SnapshotNotFoundError(snapshot_id, "unknown")
 
             return Snapshot(
-                id=row['id'],
-                behavior_id=row['behavior_id'],
-                input_json=row['input_json'],
-                output_text=row['output_text'],
-                embedding=row['embedding'],
-                model_name=row['model_name'],
-                created_at=row['created_at'],
-                git_commit=row['git_commit']
+                id=row["id"],
+                behavior_id=row["behavior_id"],
+                input_json=row["input_json"],
+                output_text=row["output_text"],
+                embedding=row["embedding"],
+                model_name=row["model_name"],
+                created_at=row["created_at"],
+                git_commit=row["git_commit"],
             )
         except sqlite3.Error as e:
             raise StorageError(f"Failed to retrieve snapshot: {e}")
@@ -382,7 +386,7 @@ class Storage:
                 INSERT INTO similarity_history (snapshot_id, similarity, timestamp)
                 VALUES (?, ?, ?)
                 """,
-                (snapshot_id, similarity, timestamp)
+                (snapshot_id, similarity, timestamp),
             )
             conn.commit()
         except sqlite3.Error as e:
@@ -407,11 +411,11 @@ class Storage:
                 ORDER BY timestamp DESC
                 LIMIT ?
                 """,
-                (snapshot_id, limit)
+                (snapshot_id, limit),
             ).fetchall()
 
             # MYPY FIX: Ignores SQLite returning lists of Any
-            return [row['similarity'] for row in rows]  # type: ignore[no-any-return]
+            return [row["similarity"] for row in rows]  # type: ignore[no-any-return]
         except sqlite3.Error as e:
             raise StorageError(f"Failed to get similarity history: {e}")
 
@@ -427,20 +431,19 @@ class Storage:
         try:
             conn = self._get_connection()
             rows = conn.execute(
-                "SELECT * FROM snapshots WHERE behavior_id = ?",
-                (behavior_id,)
+                "SELECT * FROM snapshots WHERE behavior_id = ?", (behavior_id,)
             ).fetchall()
 
             return [
                 Snapshot(
-                    id=row['id'],
-                    behavior_id=row['behavior_id'],
-                    input_json=row['input_json'],
-                    output_text=row['output_text'],
-                    embedding=row['embedding'],
-                    model_name=row['model_name'],
-                    created_at=row['created_at'],
-                    git_commit=row['git_commit']
+                    id=row["id"],
+                    behavior_id=row["behavior_id"],
+                    input_json=row["input_json"],
+                    output_text=row["output_text"],
+                    embedding=row["embedding"],
+                    model_name=row["model_name"],
+                    created_at=row["created_at"],
+                    git_commit=row["git_commit"],
                 )
                 for row in rows
             ]
@@ -483,20 +486,16 @@ class Storage:
         """
         try:
             conn = self._get_connection()
-            snapshot_count = conn.execute(
-                "SELECT COUNT(*) FROM snapshots"
-            ).fetchone()[0]
-            history_count = conn.execute(
-                "SELECT COUNT(*) FROM similarity_history"
-            ).fetchone()[0]
+            snapshot_count = conn.execute("SELECT COUNT(*) FROM snapshots").fetchone()[0]
+            history_count = conn.execute("SELECT COUNT(*) FROM similarity_history").fetchone()[0]
             behavior_count = conn.execute(
                 "SELECT COUNT(DISTINCT behavior_id) FROM snapshots"
             ).fetchone()[0]
 
             return {
-                'snapshots': snapshot_count,
-                'history_records': history_count,
-                'behaviors': behavior_count
+                "snapshots": snapshot_count,
+                "history_records": history_count,
+                "behaviors": behavior_count,
             }
         except sqlite3.Error as e:
             raise StorageError(f"Failed to get stats: {e}")
@@ -519,8 +518,7 @@ class Storage:
         """
         try:
             conn = self._get_connection()
-            rows = conn.execute(
-                """
+            rows = conn.execute("""
                 SELECT 
                     behavior_id, 
                     COUNT(*) as count, 
@@ -528,21 +526,17 @@ class Storage:
                 FROM snapshots
                 GROUP BY behavior_id
                 ORDER BY count DESC
-                """
-            ).fetchall()
+                """).fetchall()
 
             # MYPY FIX: Ignores SQLite returning lists of Any
             return [
-                (row['behavior_id'], row['count'], row['last_run'])
-                for row in rows
+                (row["behavior_id"], row["count"], row["last_run"]) for row in rows
             ]  # type: ignore[no-any-return]
         except sqlite3.Error as e:
             raise StorageError(f"Failed to get behavior summary: {e}")
 
     def get_similarity_history_with_timestamps(
-        self,
-        snapshot_id: str,
-        limit: int = 10
+        self, snapshot_id: str, limit: int = 10
     ) -> List[tuple]:
         """Get similarity history with timestamps for the history command.
 
@@ -565,10 +559,10 @@ class Storage:
                 ORDER BY timestamp DESC
                 LIMIT ?
                 """,
-                (snapshot_id, limit)
+                (snapshot_id, limit),
             ).fetchall()
 
             # MYPY FIX: Ignores SQLite returning lists of Any
-            return [(row['similarity'], row['timestamp']) for row in rows]  # type: ignore[no-any-return]
+            return [(row["similarity"], row["timestamp"]) for row in rows]  # type: ignore[no-any-return]
         except sqlite3.Error as e:
             raise StorageError(f"Failed to get similarity history: {e}")

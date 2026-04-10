@@ -26,7 +26,6 @@ from .embedder import get_embedder, DEFAULT_MODEL_NAME
 from .comparator import Comparator
 from .exceptions import BehaviorCIError, SerializationError, ConfigurationError
 
-
 # Stash keys for passing data between hooks
 CONFIG_KEY = pytest.StashKey[dict]()
 
@@ -38,47 +37,44 @@ def pytest_addoption(parser: Any) -> None:
         "--behaviorci",
         action="store_true",
         default=False,
-        help="Enable BehaviorCI regression testing"
+        help="Enable BehaviorCI regression testing",
     )
     group.addoption(
         "--behaviorci-record",
         action="store_true",
         default=False,
-        help="Record new snapshots (overwrites existing)"
+        help="Record new snapshots (overwrites existing)",
     )
     group.addoption(
-        "--behaviorci-update",
-        action="store_true",
-        default=False,
-        help="Update failing snapshots"
+        "--behaviorci-update", action="store_true", default=False, help="Update failing snapshots"
     )
     group.addoption(
         "--behaviorci-record-missing",
         action="store_true",
         default=False,
-        help="Record missing snapshots instead of failing (CI workflow)"
+        help="Record missing snapshots instead of failing (CI workflow)",
     )
     group.addoption(
         "--behaviorci-db",
         action="store",
         default=None,
-        help="Path to BehaviorCI database (default: .behaviorci/behaviorci.db)"
+        help="Path to BehaviorCI database (default: .behaviorci/behaviorci.db)",
     )
     group.addoption(
         "--behaviorci-model",
         action="store",
-        default='sentence-transformers/all-MiniLM-L6-v2',  # FIX: Default model
-        help="Embedding model name (default: sentence-transformers/all-MiniLM-L6-v2)"
+        default="sentence-transformers/all-MiniLM-L6-v2",  # FIX: Default model
+        help="Embedding model name (default: sentence-transformers/all-MiniLM-L6-v2)",
     )
 
 
 def pytest_configure(config: Any) -> None:
     """Configure BehaviorCI based on options."""
     config.behaviorci_enabled = (
-        config.getoption("--behaviorci") or
-        config.getoption("--behaviorci-record") or
-        config.getoption("--behaviorci-update") or
-        config.getoption("--behaviorci-record-missing")
+        config.getoption("--behaviorci")
+        or config.getoption("--behaviorci-record")
+        or config.getoption("--behaviorci-update")
+        or config.getoption("--behaviorci-record-missing")
     )
     config.behaviorci_record = config.getoption("--behaviorci-record")
     config.behaviorci_update = config.getoption("--behaviorci-update")
@@ -96,23 +92,26 @@ def pytest_collection_modifyitems(config: Any, items: Any) -> None:
     seen_ids: Dict[str, tuple] = {}
 
     for item in items:
-        if hasattr(item.obj, '_behavior_config'):
+        if hasattr(item.obj, "_behavior_config"):
             config_obj = item.obj._behavior_config
             behavior_id = config_obj.behavior_id
             func_path = item.location[0]
             func_name = item.location[2]
-            if '[' in func_name:
-                func_name = func_name.split('[')[0]
+            if "[" in func_name:
+                func_name = func_name.split("[")[0]
             func_key = (func_path, func_name)
 
             if behavior_id in seen_ids:
                 other_func_key = seen_ids[behavior_id]
                 if other_func_key != func_key:
                     other_item = next(
-                        (i for i in items
-                         if hasattr(i.obj, '_behavior_config')
-                         and i.obj._behavior_config.behavior_id == behavior_id),
-                        None
+                        (
+                            i
+                            for i in items
+                            if hasattr(i.obj, "_behavior_config")
+                            and i.obj._behavior_config.behavior_id == behavior_id
+                        ),
+                        None,
                     )
                     raise ConfigurationError(
                         f"Duplicate behavior_id '{behavior_id}' detected:\n"
@@ -124,10 +123,10 @@ def pytest_collection_modifyitems(config: Any, items: Any) -> None:
                 seen_ids[behavior_id] = func_key
 
             item.stash[CONFIG_KEY] = {
-                'behavior_id': behavior_id,
-                'threshold': config_obj.threshold,
-                'must_contain': config_obj.must_contain,
-                'must_not_contain': config_obj.must_not_contain,
+                "behavior_id": behavior_id,
+                "threshold": config_obj.threshold,
+                "must_contain": config_obj.must_contain,
+                "must_not_contain": config_obj.must_not_contain,
             }
 
 
@@ -151,8 +150,8 @@ def pytest_runtest_makereport(item: Any, call: Any) -> Any:
     if config is None:
         return
 
-    output_text = getattr(item.obj, '_behaviorci_result', None)
-    input_json = getattr(item.obj, '_behaviorci_input_json', None)
+    output_text = getattr(item.obj, "_behaviorci_result", None)
+    input_json = getattr(item.obj, "_behaviorci_input_json", None)
 
     if output_text is None or input_json is None:
         report.outcome = "failed"
@@ -167,10 +166,10 @@ def pytest_runtest_makereport(item: Any, call: Any) -> Any:
     embedder = get_embedder(item.config.behaviorci_model)
     comparator = Comparator(storage, embedder)
 
-    behavior_id = config['behavior_id']
-    threshold = config['threshold']
-    must_contain = config['must_contain']
-    must_not_contain = config['must_not_contain']
+    behavior_id = config["behavior_id"]
+    threshold = config["threshold"]
+    must_contain = config["must_contain"]
+    must_not_contain = config["must_not_contain"]
 
     record_mode = item.config.behaviorci_record or item.config.behaviorci_update
     record_missing = item.config.behaviorci_record_missing
@@ -178,7 +177,9 @@ def pytest_runtest_makereport(item: Any, call: Any) -> Any:
     try:
         # Format display text for Centroids
         display_text = output_text[0] if isinstance(output_text, list) else output_text
-        centroid_msg = f" (Centroid of {len(output_text)} samples)" if isinstance(output_text, list) else ""
+        centroid_msg = (
+            f" (Centroid of {len(output_text)} samples)" if isinstance(output_text, list) else ""
+        )
 
         if record_mode:
             git_commit = _get_git_commit()
@@ -186,19 +187,21 @@ def pytest_runtest_makereport(item: Any, call: Any) -> Any:
                 behavior_id=behavior_id,
                 input_json=input_json,
                 output_text=output_text,
-                git_commit=git_commit
+                git_commit=git_commit,
             )
 
-            report.sections.append((
-                "BehaviorCI",
-                f"✅ Recorded snapshot: {behavior_id}{centroid_msg}\n"
-                f"Snapshot ID: {snapshot_id[:16]}...\n\n"
-                f"⚠️ URGENT: Review the primary captured output below to ensure it is correct.\n"
-                f"This will be your new ground truth for future tests.\n"
-                f"{'='*50}\n"
-                f"{display_text}\n"
-                f"{'='*50}"
-            ))
+            report.sections.append(
+                (
+                    "BehaviorCI",
+                    f"✅ Recorded snapshot: {behavior_id}{centroid_msg}\n"
+                    f"Snapshot ID: {snapshot_id[:16]}...\n\n"
+                    f"⚠️ URGENT: Review the primary captured output below to ensure it is correct.\n"
+                    f"This will be your new ground truth for future tests.\n"
+                    f"{'='*50}\n"
+                    f"{display_text}\n"
+                    f"{'='*50}",
+                )
+            )
         else:
             result = comparator.compare(
                 behavior_id=behavior_id,
@@ -207,7 +210,7 @@ def pytest_runtest_makereport(item: Any, call: Any) -> Any:
                 base_threshold=threshold,
                 must_contain=must_contain,
                 must_not_contain=must_not_contain,
-                record_mode=False
+                record_mode=False,
             )
 
             if not result.passed and record_missing and "No snapshot found" in result.message:
@@ -216,20 +219,22 @@ def pytest_runtest_makereport(item: Any, call: Any) -> Any:
                     behavior_id=behavior_id,
                     input_json=input_json,
                     output_text=output_text,
-                    git_commit=git_commit
+                    git_commit=git_commit,
                 )
 
-                report.sections.append((
-                    "BehaviorCI",
-                    f"✅ Auto-recorded missing snapshot: {behavior_id}{centroid_msg}\n"
-                    f"Snapshot ID: {snapshot_id[:16]}...\n\n"
-                    f"⚠️ URGENT: Review the primary captured output below to ensure it is correct.\n"
-                    f"This will be your new ground truth for future tests.\n"
-                    f"{'='*50}\n"
-                    f"{display_text}\n"
-                    f"{'='*50}\n"
-                    f"(Use --behaviorci-record to record all, --behaviorci for strict mode)"
-                ))
+                report.sections.append(
+                    (
+                        "BehaviorCI",
+                        f"✅ Auto-recorded missing snapshot: {behavior_id}{centroid_msg}\n"
+                        f"Snapshot ID: {snapshot_id[:16]}...\n\n"
+                        f"⚠️ URGENT: Review the primary captured output below to ensure it is correct.\n"
+                        f"This will be your new ground truth for future tests.\n"
+                        f"{'='*50}\n"
+                        f"{display_text}\n"
+                        f"{'='*50}\n"
+                        f"(Use --behaviorci-record to record all, --behaviorci for strict mode)",
+                    )
+                )
             else:
                 report_lines = [
                     f"Behavior: {result.behavior_id}{centroid_msg}",
@@ -257,9 +262,7 @@ def pytest_runtest_makereport(item: Any, call: Any) -> Any:
                         snapshot = storage.find_snapshot(behavior_id, input_json)
                         if snapshot:
                             diff_text = _generate_diff(
-                                snapshot.output_text,
-                                output_text,
-                                result.similarity
+                                snapshot.output_text, output_text, result.similarity
                             )
                             report.longrepr += f"\n\n{diff_text}"
 
@@ -272,10 +275,7 @@ def _get_git_commit() -> Optional[str]:
     """Get current git commit hash if available."""
     try:
         result = subprocess.run(
-            ["git", "rev-parse", "HEAD"],
-            capture_output=True,
-            text=True,
-            timeout=5
+            ["git", "rev-parse", "HEAD"], capture_output=True, text=True, timeout=5
         )
         if result.returncode == 0:
             return result.stdout.strip()
@@ -284,12 +284,14 @@ def _get_git_commit() -> Optional[str]:
     return None
 
 
-def _generate_diff(stored_output: str, current_output: Union[str, List[str]], similarity: float) -> str:
+def _generate_diff(
+    stored_output: str, current_output: Union[str, List[str]], similarity: float
+) -> str:
     """Generate a readable diff between stored and current output."""
-    
+
     # Extract strings if inputs are Centroid lists
     current_display = current_output[0] if isinstance(current_output, list) else current_output
-    
+
     # Try to parse stored JSON if it was a centroid array
     try:
         stored_parsed = json.loads(stored_output)
@@ -311,21 +313,25 @@ def _generate_diff(stored_output: str, current_output: Union[str, List[str]], si
     if len(stored_display) > 500:
         lines.append("... (truncated)")
 
-    lines.extend([
-        "",
-        "--- CURRENT OUTPUT (Primary Sample) ---",
-        current_display[:500],
-    ])
+    lines.extend(
+        [
+            "",
+            "--- CURRENT OUTPUT (Primary Sample) ---",
+            current_display[:500],
+        ]
+    )
 
     if len(current_display) > 500:
         lines.append("... (truncated)")
 
-    lines.extend([
-        "",
-        "=" * 50,
-        "Run with --behaviorci-update to accept new behavior",
-        "=" * 50,
-    ])
+    lines.extend(
+        [
+            "",
+            "=" * 50,
+            "Run with --behaviorci-update to accept new behavior",
+            "=" * 50,
+        ]
+    )
 
     return "\n".join(lines)
 

@@ -7,9 +7,9 @@ from pathlib import Path
 from .storage import get_storage, reset_all_storage
 
 app = typer.Typer(
-    help="BehaviorCI - Pytest-native behavioral regression testing for LLMs",
-    no_args_is_help=True
+    help="BehaviorCI - Pytest-native behavioral regression testing for LLMs", no_args_is_help=True
 )
+
 
 def run_pytest(args: list[str]) -> None:
     """Helper to run pytest with BehaviorCI arguments."""
@@ -19,10 +19,11 @@ def run_pytest(args: list[str]) -> None:
     except subprocess.CalledProcessError as e:
         raise typer.Exit(code=e.returncode)
 
+
 @app.command()
 def record(
     path: str = typer.Argument("tests/", help="Path to tests"),
-    db: str = typer.Option(None, "--db", help="Custom database path")
+    db: str = typer.Option(None, "--db", help="Custom database path"),
 ) -> None:
     """Record new behavioral snapshots (overwrites existing)."""
     typer.echo(f"Recording snapshots for {path}...")
@@ -31,10 +32,11 @@ def record(
         args.extend(["--behaviorci-db", db])
     run_pytest(args)
 
+
 @app.command()
 def check(
     path: str = typer.Argument("tests/", help="Path to tests"),
-    db: str = typer.Option(None, "--db", help="Custom database path")
+    db: str = typer.Option(None, "--db", help="Custom database path"),
 ) -> None:
     """Check for behavioral regressions."""
     typer.echo(f"Checking for regressions in {path}...")
@@ -43,10 +45,11 @@ def check(
         args.extend(["--behaviorci-db", db])
     run_pytest(args)
 
+
 @app.command()
 def update(
     path: str = typer.Argument("tests/", help="Path to tests"),
-    db: str = typer.Option(None, "--db", help="Custom database path")
+    db: str = typer.Option(None, "--db", help="Custom database path"),
 ) -> None:
     """Update failing snapshots with current output."""
     typer.echo(f"Updating failing snapshots in {path}...")
@@ -55,10 +58,11 @@ def update(
         args.extend(["--behaviorci-db", db])
     run_pytest(args)
 
+
 @app.command()
 def record_missing(
     path: str = typer.Argument("tests/", help="Path to tests"),
-    db: str = typer.Option(None, "--db", help="Custom database path")
+    db: str = typer.Option(None, "--db", help="Custom database path"),
 ) -> None:
     """Record missing snapshots and check existing (CI workflow)."""
     typer.echo(f"Recording missing snapshots in {path}...")
@@ -67,14 +71,13 @@ def record_missing(
         args.extend(["--behaviorci-db", db])
     run_pytest(args)
 
+
 @app.command()
-def stats(
-    db: str = typer.Option(None, "--db", help="Custom database path")
-) -> None:
+def stats(db: str = typer.Option(None, "--db", help="Custom database path")) -> None:
     """Show statistics about stored behaviors."""
     storage = get_storage(db)
     stats_dict = storage.get_stats()
-    
+
     typer.echo("\n📊 BehaviorCI Statistics")
     typer.echo("=========================")
     typer.echo(f"Total Snapshots: {stats_dict['snapshots']}")
@@ -82,10 +85,11 @@ def stats(
     typer.echo(f"History Records: {stats_dict['history_records']}")
     typer.echo("")
 
+
 @app.command()
 def clear(
     force: bool = typer.Option(False, "--force", "-f", help="Force deletion without prompt"),
-    db: str = typer.Option(None, "--db", help="Custom database path")
+    db: str = typer.Option(None, "--db", help="Custom database path"),
 ) -> None:
     """Clear all stored snapshots (destructive)."""
     if not force:
@@ -93,12 +97,12 @@ def clear(
         if not confirm:
             typer.echo("Operation cancelled.")
             raise typer.Exit()
-            
+
     storage = get_storage(db)
     db_path = storage.db_path
-    
+
     reset_all_storage()
-    
+
     try:
         Path(db_path).unlink(missing_ok=True)
         typer.echo(f"Successfully deleted {db_path}")
@@ -106,9 +110,11 @@ def clear(
         typer.echo(f"Error deleting database: {e}", err=True)
         raise typer.Exit(code=1)
 
+
 def main() -> None:
     """Entry point for the CLI."""
     app()
+
 
 if __name__ == "__main__":
     main()
