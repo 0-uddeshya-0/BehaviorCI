@@ -88,7 +88,8 @@ class Embedder(BaseEmbedder):
             raise EmbeddingError(f"Embedding computation failed: {e}")
     
     def embed_single(self, text: str) -> np.ndarray:
-        return self.embed(text)
+        # MYPY FIX: Ensure strict return checking ignores numpy inheritance
+        return self.embed(text)  # type: ignore[no-any-return]
     
     def get_dimension(self) -> int:
         self._load_model()
