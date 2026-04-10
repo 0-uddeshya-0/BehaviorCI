@@ -33,7 +33,6 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          # FIX: Install BOTH dev tools and local ML models
           pip install -e ".[dev,local]"
 
       - name: Run tests (record mode)
@@ -45,14 +44,8 @@ jobs:
       - name: Run tests (parallel execution)
         run: pytest tests/ -n 4 --behaviorci -v --tb=short
 
-      - name: Type check
+      - name: Type check (MyPy)
         run: mypy src/behaviorci/ --ignore-missing-imports --python-version ${{ matrix.python-version }}
-
-      - name: Format check (black)
-        run: black src/ tests/ --check
-
-      - name: Import order check (isort)
-        run: isort src/ tests/ --check-only --profile black
 
   lint:
     runs-on: ubuntu-latest
