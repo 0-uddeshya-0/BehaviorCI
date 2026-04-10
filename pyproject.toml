@@ -67,9 +67,11 @@ warn_return_any = true
 warn_unused_configs = true
 disallow_untyped_defs = true
 
-# FIX: Suppress pytest return value warnings (BehaviorCI intentionally returns values)
 [tool.pytest.ini_options]
 filterwarnings = [
     "ignore::pytest.PytestReturnNotNoneWarning",
 ]
 testpaths = ["tests"]
+markers = [
+    "slow: marks tests as slow (deselect with '-m \"not slow\"')"
+]
