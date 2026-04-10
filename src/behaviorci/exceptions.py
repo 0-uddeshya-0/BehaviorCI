@@ -39,11 +39,13 @@ class SnapshotNotFoundError(BehaviorCIError):
 class ModelMismatchError(BehaviorCIError):
     """Raised when attempting to compare embeddings from different models."""
     def __init__(self, stored_model: str, current_model: str):
+        self.stored_model = stored_model
+        self.current_model = current_model
         msg = (
             f"Model mismatch detected.\n"
             f"The stored snapshot was created using '{stored_model}', "
             f"but the current test is running with '{current_model}'.\n"
-            f"Embeddings from different models exist in different mathematical spaces "
+            f"Embeddings from different models exist in different vector spaces "
             f"and cannot be accurately compared.\n"
             f"Resolution: Run pytest with --behaviorci-record to recreate the baseline "
             f"using the new model."
