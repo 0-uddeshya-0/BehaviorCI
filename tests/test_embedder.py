@@ -68,12 +68,24 @@ class TestSimilarity:
 
 
 class TestLocalModel:
-    """Exercises the real sentence-transformers model when it is installed."""
+    """Exercises the real sentence-transformers model when it is available."""
 
     @pytest.fixture(autouse=True)
     def _require_local(self):
         pytest.importorskip("sentence_transformers")
         reset_embedder()
+
+        from behaviorci.embedder import Embedder
+        from behaviorci.exceptions import EmbeddingError
+
+        # Load the model up front and skip (rather than fail) if it can't be
+        # fetched. These are best-effort integration checks that need the model
+        # cached locally or downloadable; a flaky network or a Hugging Face rate
+        # limit shouldn't turn the build red.
+        try:
+            Embedder().get_dimension()
+        except EmbeddingError as exc:
+            pytest.skip(f"local embedding model unavailable: {exc}")
 
     def test_embed_shape_and_dtype(self):
         from behaviorci.embedder import Embedder
