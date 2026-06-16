@@ -1,1 +1,1 @@
-
+"""BehaviorCI test suite."""

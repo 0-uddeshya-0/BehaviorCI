@@ -1,30 +1,20 @@
-"""Pytest configuration for BehaviorCI tests."""
-
-import os
-import sys
+"""Shared fixtures for the BehaviorCI test suite."""
 
 import pytest
-
-# Add tests/examples to path for mock_embedder
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "examples"))
 
 
 @pytest.fixture(autouse=True)
 def reset_singletons():
-    """Reset all singletons before each test.
+    """Reset cached storage and embedder state around every test.
 
-    WHY: BUG-003 - Singleton state must be reset between tests
-    to ensure test isolation.
+    BehaviorCI caches one storage instance per database path and one embedder
+    per model, so tests must start from a clean slate to stay isolated.
     """
     from behaviorci.embedder import reset_embedder
     from behaviorci.storage import reset_all_storage
 
-    # Reset before test
     reset_all_storage()
     reset_embedder()
-
     yield
-
-    # Reset after test
     reset_all_storage()
     reset_embedder()

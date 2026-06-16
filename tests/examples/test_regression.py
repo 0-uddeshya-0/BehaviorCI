@@ -1,30 +1,22 @@
-"""Test for regression detection demonstration."""
+"""Example showing how a changed output is captured as a distinct behavior."""
 
 import pytest
-from fake_llm import get_llm, reset_llm
+from fake_llm import reset_llm
 
 from behaviorci import behavior
 
 
 @pytest.fixture(autouse=True)
 def fresh_llm():
-    """Reset LLM before each test."""
     reset_llm()
     yield
 
 
-# HIGH-003 FIX: Use unique behavior_id to avoid conflict with test_app.py
-# The duplicate behavior_id would cause ConfigurationError with FIX-005
-@behavior("refund_classifier_regression_demo", threshold=0.85)
-def test_refund_classification_regression():
-    """This test simulates a behavioral regression.
+@behavior("refund_classifier_v2", threshold=0.85)
+def test_refund_classification_v2():
+    """A second classifier behavior, tracked independently from the first.
 
-    The original test in test_app.py returns 'REFUND_REQUEST' but this
-    one returns 'BILLING_QUESTION' to simulate a regression in the LLM behavior.
-
-    NOTE: Uses unique behavior_id to avoid conflict with FIX-005 validation.
+    Recording this and later changing the returned label is the quickest way to
+    see BehaviorCI flag a regression in a demo.
     """
-    llm = get_llm()
-    # Simulate regression: return different classification
-    result = "BILLING_QUESTION"  # Changed from REFUND_REQUEST
-    return result
+    return "BILLING_QUESTION"

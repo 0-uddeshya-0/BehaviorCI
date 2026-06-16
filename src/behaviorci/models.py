@@ -1,6 +1,5 @@
 """Pydantic models for BehaviorCI."""
 
-from datetime import datetime
 from typing import Any, Dict, List, Optional, Tuple, Union
 
 import numpy as np

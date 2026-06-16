@@ -1,25 +1,19 @@
-"""SQLite storage layer for BehaviorCI snapshots and history.
+"""SQLite storage for behavioral snapshots and their similarity history.
 
-BUG FIXES APPLIED:
-- BUG-001: datetime import moved to top (was at bottom causing NameError)
-- BUG-002: WAL mode enabled for concurrent writes (prevents "database is locked")
-- BUG-003: Singleton pattern with thread-local connections (prevents connection leak)
-- FIX-007: busy_timeout now set on every thread-local connection in _get_connection().
-           Previously it was set only on the init connection (which is immediately
-           closed), so thread-local connections had no timeout and could still
-           produce "database is locked" errors under concurrent load.
-- FIX-008: :memory: path is now handled as a true SQLite in-memory database.
-           Previously, Storage(":memory:") would call Path(":memory:").parent.mkdir()
-           and sqlite3.connect(":memory:") under WAL mode produced literal files
-           named ":memory:" and ":memory:-shm" on disk. Now the path is detected
-           and directory creation + WAL init are skipped for in-memory databases.
+The database keeps two tables: ``snapshots`` holds one baseline per
+(behavior_id, input) pair, and ``similarity_history`` records every score we
+measure against a snapshot so the comparator can reason about variance.
+
+Connections are opened per-thread and the database runs in WAL mode so that
+``pytest-xdist`` workers can read and write concurrently without tripping over
+``database is locked`` errors.
 """
 
 import hashlib
-import json
 import os
 import sqlite3
 import threading
+import time
 from datetime import datetime
 from pathlib import Path
 from typing import Dict, List, Optional
@@ -27,7 +21,7 @@ from typing import Dict, List, Optional
 import numpy as np
 
 from .exceptions import SnapshotNotFoundError, StorageError
-from .models import SimilarityRecord, Snapshot
+from .models import Snapshot
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS snapshots (
@@ -51,49 +45,32 @@ CREATE TABLE IF NOT EXISTS similarity_history (
 
 CREATE INDEX IF NOT EXISTS idx_behavior ON snapshots(behavior_id);
 CREATE INDEX IF NOT EXISTS idx_snapshot_history ON similarity_history(snapshot_id);
-
--- TASK 2 (v0.2): Index for timestamp-ordered queries (e.g., behaviorci history command)
-CREATE INDEX IF NOT EXISTS idx_similarity_timestamp 
+CREATE INDEX IF NOT EXISTS idx_similarity_timestamp
 ON similarity_history(timestamp DESC);
 """
 
-# Sentinel value recognised by SQLite as a true in-memory database
+# Sentinel SQLite recognises as a true in-memory database.
 _MEMORY_PATH = ":memory:"
 
-# Module-level singleton storage
-# WHY: Prevents connection exhaustion with 1000+ tests (BUG-003)
-# APPROACH: Dict of db_path -> Storage instance. Rejected: connection pooling (too complex)
-# RISKS: Must call reset_storage() in tests to avoid state leakage
-# VERIFIED BY: tests/test_bug_003_singleton.py
+# One Storage instance per database path. Reusing a single instance keeps the
+# number of open SQLite connections bounded even across very large test suites.
 _storage_lock = threading.Lock()
 _storage_instances: Dict[str, "Storage"] = {}
 
 
 def get_storage(db_path: Optional[str] = None) -> "Storage":
-    """Get or create Storage singleton for given path.
-
-    WHY: BUG-003 - Each Storage() instantiation opens a new SQLite connection.
-         With 1000 tests, this hits OS file descriptor limit.
-
-    APPROACH: Singleton per db_path with thread-safe creation.
-              Rejected: global single instance (doesn't support multiple DB paths)
-
-    RISKS: Tests must reset singleton state. Use reset_storage() in test fixtures.
-
-    VERIFIED BY: tests/test_bug_003_singleton.py
+    """Return the shared :class:`Storage` for ``db_path``, creating it once.
 
     Args:
-        db_path: Path to SQLite database. Defaults to .behaviorci/behaviorci.db
-                 Pass ":memory:" for a true in-memory database (tests only).
-
-    Returns:
-        Storage singleton instance for the given path
+        db_path: Path to the SQLite database. Defaults to
+            ``.behaviorci/behaviorci.db``. Pass ``":memory:"`` for an in-memory
+            database (handy in tests).
     """
     if db_path is None:
         db_path = os.path.join(".behaviorci", "behaviorci.db")
 
-    # Normalise path for consistent lookup, but leave :memory: unchanged —
-    # Path(":memory:").resolve() produces an incorrect filesystem path.
+    # Normalise real paths so different spellings map to the same instance, but
+    # leave ":memory:" untouched -- resolving it would point at a real file.
     if db_path != _MEMORY_PATH:
         db_path = str(Path(db_path).resolve())
 
@@ -104,11 +81,7 @@ def get_storage(db_path: Optional[str] = None) -> "Storage":
 
 
 def reset_storage(db_path: Optional[str] = None) -> None:
-    """Reset storage singleton for given path (useful for testing).
-
-    Args:
-        db_path: Path to SQLite database. If None, resets default path.
-    """
+    """Drop the cached :class:`Storage` for ``db_path`` (used by test fixtures)."""
     if db_path is None:
         db_path = os.path.join(".behaviorci", "behaviorci.db")
 
@@ -116,124 +89,89 @@ def reset_storage(db_path: Optional[str] = None) -> None:
         db_path = str(Path(db_path).resolve())
 
     with _storage_lock:
-        if db_path in _storage_instances:
-            del _storage_instances[db_path]
+        instance = _storage_instances.pop(db_path, None)
+    if instance is not None:
+        instance.close()
 
 
 def reset_all_storage() -> None:
-    """Reset all storage singletons (nuclear option for testing)."""
+    """Drop every cached :class:`Storage` instance."""
     with _storage_lock:
+        instances = list(_storage_instances.values())
         _storage_instances.clear()
+    for instance in instances:
+        instance.close()
 
 
 def compute_snapshot_id(behavior_id: str, input_json: str) -> str:
-    """Compute unique snapshot ID from behavior_id and canonical input JSON."""
+    """Derive a stable snapshot id from a behavior id and its canonical input."""
     data = f"{behavior_id}:{input_json}"
     return hashlib.sha256(data.encode("utf-8")).hexdigest()
 
 
 class Storage:
-    """SQLite storage for behavioral snapshots.
+    """SQLite-backed store for snapshots and similarity history.
 
-    WHY: BUG-003 - Uses thread-local connections for thread safety.
-         SQLite connections are NOT thread-safe.
-
-    APPROACH: threading.local() stores connection per thread.
-              Rejected: connection pool (overkill for SQLite)
-
-    RISKS: Each thread opens its own connection. With many threads,
-           could hit SQLite connection limit (default 1000).
-
-    VERIFIED BY: tests/test_bug_003_singleton.py
+    Prefer :func:`get_storage` over instantiating this directly so connections
+    are reused. Each thread gets its own connection because SQLite connection
+    objects are not safe to share across threads.
     """
 
     def __init__(self, db_path: Optional[str] = None):
-        """Initialize storage with database path.
-
-        NOTE: Use get_storage() instead of direct instantiation to get singleton.
-
-        Args:
-            db_path: Path to SQLite database. Defaults to .behaviorci/behaviorci.db
-                     Pass ":memory:" for a true in-memory database (tests only).
-        """
         if db_path is None:
             db_path = os.path.join(".behaviorci", "behaviorci.db")
 
         self._is_memory = db_path == _MEMORY_PATH
         self.db_path = Path(db_path)
 
-        # FIX-008: Skip directory creation for :memory: — it is not a real path.
-        # Previously this called Path(":memory:").parent.mkdir() which created
-        # a "." directory entry, and sqlite3.connect(":memory:") under WAL mode
-        # produced literal ":memory:" and ":memory:-shm" files on disk.
+        # An in-memory database is not a real path, so there is nothing to create.
         if not self._is_memory:
             self.db_path.parent.mkdir(parents=True, exist_ok=True)
 
-        # Thread-local storage for connections (BUG-003)
         self._local = threading.local()
-
         self._init_db()
 
     def _get_connection(self) -> sqlite3.Connection:
-        """Get thread-local database connection.
+        """Return this thread's connection, opening it on first use.
 
-        WHY: BUG-003 - SQLite connections are NOT thread-safe.
-              Each thread must have its own connection.
-
-        FIX-007: busy_timeout is a per-connection setting and is NOT persisted
-                 by WAL mode. It must be set on every new connection, not just
-                 the init connection. Without this, thread-local connections had
-                 no timeout and could still deadlock under concurrent writes.
-
-        NOTE: For :memory: databases each thread gets its own independent
-              in-memory database. This is intentional — it matches test
-              isolation expectations and is consistent with SQLite's behaviour.
-
-        Returns:
-            Thread-local SQLite connection
+        ``synchronous`` and ``busy_timeout`` are per-connection PRAGMAs, so they
+        have to be re-applied for every new connection rather than relying on
+        the WAL setting persisted in the database file. In-memory databases are
+        private to each connection, so they also need the schema created here.
         """
         if not hasattr(self._local, "connection") or self._local.connection is None:
             self._local.connection = sqlite3.connect(
                 str(self.db_path), uri=False, detect_types=sqlite3.PARSE_DECLTYPES
             )
             self._local.connection.row_factory = sqlite3.Row
-            # FIX-007: These PRAGMAs must be set on every new connection.
-            # journal_mode=WAL persists in the DB file so it is already active,
-            # but synchronous and busy_timeout are per-connection and must be
-            # re-applied every time a new thread-local connection is created.
             self._local.connection.execute("PRAGMA synchronous=NORMAL")
             self._local.connection.execute("PRAGMA busy_timeout=5000")
 
-            # For in-memory databases the schema must also be created per
-            # connection because each thread gets a fresh in-memory DB.
             if self._is_memory:
                 self._local.connection.executescript(SCHEMA)
                 self._local.connection.commit()
 
-        # MYPY FIX: explicitly ignore upstream sqlite3 connection Any return
         return self._local.connection  # type: ignore[no-any-return]
 
+    def close(self) -> None:
+        """Close the current thread's connection if one is open.
+
+        Long-lived processes can simply let the connection live for their
+        lifetime; this exists so tests and the ``clear`` command can release the
+        file handle (which matters on Windows, where open files can't be
+        deleted).
+        """
+        conn = getattr(self._local, "connection", None)
+        if conn is not None:
+            conn.close()
+            self._local.connection = None
+
     def _init_db(self) -> None:
-        """Initialize database schema with WAL mode and retry for concurrency.
-        WHY: BUG-002 - SQLite rollback journal causes "database is locked"
-             errors with concurrent writes from pytest-xdist workers.
+        """Create the schema and enable WAL mode for concurrent access.
 
-        APPROACH: WAL (Write-Ahead Logging) mode allows concurrent reads/writes.
-                  - journal_mode=WAL: Enables WAL mode (persisted in DB file)
-                  - synchronous=NORMAL: Safe with WAL, faster than FULL
-                  - busy_timeout=5000: Set here too, for the init connection
-
-        NOTE: journal_mode=WAL is a database-level persistent setting.
-              synchronous and busy_timeout are per-connection (see _get_connection).
-              WAL mode is a no-op for :memory: databases and is skipped.
-
-        RISKS: WAL creates .db-wal and .db-shm files that must be handled in CI.
-
-        VERIFIED BY: tests/test_bug_002_concurrency.py
-
-        # FIX-008: :memory: databases don't support WAL mode and don't need it —
-        # they are single-process by definition. Schema is created per-connection
-        # in _get_connection() instead.
+        ``journal_mode=WAL`` is stored in the database file, so enabling it once
+        here is enough. In-memory databases are single-process and set up their
+        schema in :meth:`_get_connection` instead.
         """
         if self._is_memory:
             return
@@ -254,9 +192,7 @@ class Storage:
                     conn.close()
             except sqlite3.OperationalError as e:
                 if "database is locked" in str(e) and attempt < retries - 1:
-                    import time
-
-                    time.sleep(0.1 * (attempt + 1))  # exponential-ish backoff
+                    time.sleep(0.1 * (attempt + 1))
                     continue
                 raise StorageError(f"Failed to initialize database: {e}")
             except sqlite3.Error as e:
@@ -271,18 +207,18 @@ class Storage:
         model_name: str,
         git_commit: Optional[str] = None,
     ) -> str:
-        """Save a new snapshot, overwriting any existing one.
+        """Insert a snapshot, replacing any existing one for the same input.
 
         Args:
-            behavior_id: Logical behavior identifier
-            input_json: JSON-serialized input arguments
-            output_text: LLM output text
-            embedding: Normalized embedding vector (numpy array)
-            model_name: Name of embedding model used
-            git_commit: Optional git commit hash
+            behavior_id: Logical behavior identifier.
+            input_json: Canonical JSON of the test's input arguments.
+            output_text: Captured output text.
+            embedding: Embedding vector; normalised to unit length before storing.
+            model_name: Name of the embedding model that produced ``embedding``.
+            git_commit: Commit hash the snapshot was recorded at, if known.
 
         Returns:
-            snapshot_id: The computed snapshot ID
+            The computed snapshot id.
         """
         snapshot_id = compute_snapshot_id(behavior_id, input_json)
 
@@ -302,8 +238,10 @@ class Storage:
             conn.execute("DELETE FROM similarity_history WHERE snapshot_id = ?", (snapshot_id,))
             conn.execute(
                 """
-                INSERT INTO snapshots
-                (id, behavior_id, input_json, output_text, embedding, model_name, created_at, git_commit)
+                INSERT INTO snapshots (
+                    id, behavior_id, input_json, output_text,
+                    embedding, model_name, created_at, git_commit
+                )
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
@@ -324,16 +262,10 @@ class Storage:
         return snapshot_id
 
     def get_snapshot(self, snapshot_id: str) -> Snapshot:
-        """Retrieve a snapshot by ID.
-
-        Args:
-            snapshot_id: The snapshot ID
-
-        Returns:
-            Snapshot object
+        """Return the snapshot with ``snapshot_id``.
 
         Raises:
-            SnapshotNotFoundError: If snapshot doesn't exist
+            SnapshotNotFoundError: If no such snapshot exists.
         """
         try:
             conn = self._get_connection()
@@ -356,15 +288,7 @@ class Storage:
             raise StorageError(f"Failed to retrieve snapshot: {e}")
 
     def find_snapshot(self, behavior_id: str, input_json: str) -> Optional[Snapshot]:
-        """Find snapshot by behavior_id and input.
-
-        Args:
-            behavior_id: Logical behavior identifier
-            input_json: JSON-serialized input arguments
-
-        Returns:
-            Snapshot if found, None otherwise
-        """
+        """Return the snapshot for ``(behavior_id, input_json)`` or ``None``."""
         snapshot_id = compute_snapshot_id(behavior_id, input_json)
         try:
             return self.get_snapshot(snapshot_id)
@@ -372,12 +296,7 @@ class Storage:
             return None
 
     def record_similarity(self, snapshot_id: str, similarity: float) -> None:
-        """Record a similarity comparison for variance tracking.
-
-        Args:
-            snapshot_id: The snapshot ID
-            similarity: Similarity score (0-1)
-        """
+        """Append a measured similarity score for variance tracking."""
         timestamp = int(datetime.now().timestamp())
 
         try:
@@ -394,15 +313,7 @@ class Storage:
             raise StorageError(f"Failed to record similarity: {e}")
 
     def get_similarity_history(self, snapshot_id: str, limit: int = 10) -> List[float]:
-        """Get recent similarity scores for variance tracking.
-
-        Args:
-            snapshot_id: The snapshot ID
-            limit: Maximum number of records to return
-
-        Returns:
-            List of similarity scores
-        """
+        """Return the most recent similarity scores for a snapshot, newest first."""
         try:
             conn = self._get_connection()
             rows = conn.execute(
@@ -415,20 +326,12 @@ class Storage:
                 (snapshot_id, limit),
             ).fetchall()
 
-            # MYPY FIX: Ignores SQLite returning lists of Any
             return [row["similarity"] for row in rows]  # type: ignore[no-any-return]
         except sqlite3.Error as e:
             raise StorageError(f"Failed to get similarity history: {e}")
 
     def get_all_snapshots_for_behavior(self, behavior_id: str) -> List[Snapshot]:
-        """Get all snapshots for a behavior ID.
-
-        Args:
-            behavior_id: Logical behavior identifier
-
-        Returns:
-            List of snapshots
-        """
+        """Return every snapshot recorded under ``behavior_id``."""
         try:
             conn = self._get_connection()
             rows = conn.execute(
@@ -452,14 +355,7 @@ class Storage:
             raise StorageError(f"Failed to get snapshots: {e}")
 
     def delete_snapshot(self, snapshot_id: str) -> bool:
-        """Delete a snapshot and its history.
-
-        Args:
-            snapshot_id: The snapshot ID
-
-        Returns:
-            True if deleted, False if not found
-        """
+        """Delete a snapshot and its history. Returns ``True`` if one was removed."""
         try:
             conn = self._get_connection()
             cursor = conn.execute("DELETE FROM snapshots WHERE id = ?", (snapshot_id,))
@@ -470,7 +366,7 @@ class Storage:
             raise StorageError(f"Failed to delete snapshot: {e}")
 
     def clear_all(self) -> None:
-        """Clear all snapshots and history. USE WITH CAUTION."""
+        """Remove all snapshots and history. Irreversible."""
         try:
             conn = self._get_connection()
             conn.execute("DELETE FROM similarity_history")
@@ -480,11 +376,7 @@ class Storage:
             raise StorageError(f"Failed to clear database: {e}")
 
     def get_stats(self) -> dict:
-        """Get database statistics.
-
-        Returns:
-            Dictionary with snapshot count and history count
-        """
+        """Return counts of snapshots, distinct behaviors, and history rows."""
         try:
             conn = self._get_connection()
             snapshot_count = conn.execute("SELECT COUNT(*) FROM snapshots").fetchone()[0]
@@ -502,55 +394,27 @@ class Storage:
             raise StorageError(f"Failed to get stats: {e}")
 
     def get_behavior_summary(self) -> List[tuple]:
-        """Get summary of behaviors for CLI stats command.
-
-        HIGH-002 FIX: Added this method to avoid raw SQLite in CLI.
-
-        WHY: CLI stats was bypassing the Storage abstraction with raw
-        sqlite3.connect() calls, which:
-        1. Bypassed singleton pattern (extra connections)
-        2. Bypassed WAL mode settings (potential locking issues)
-        3. Violated abstraction layer
-
-        Returns:
-            List of tuples: (behavior_id, count, last_run_timestamp)
-
-        VERIFIED BY: CLI stats command uses this method
-        """
+        """Return ``(behavior_id, snapshot_count, last_recorded_at)`` per behavior."""
         try:
             conn = self._get_connection()
             rows = conn.execute("""
-                SELECT 
-                    behavior_id, 
-                    COUNT(*) as count, 
+                SELECT
+                    behavior_id,
+                    COUNT(*) as count,
                     MAX(created_at) as last_run
                 FROM snapshots
                 GROUP BY behavior_id
                 ORDER BY count DESC
                 """).fetchall()
 
-            # MYPY FIX: Ignores SQLite returning lists of Any
-            return [
-                (row["behavior_id"], row["count"], row["last_run"]) for row in rows
-            ]  # type: ignore[no-any-return]
+            return [(row["behavior_id"], row["count"], row["last_run"]) for row in rows]
         except sqlite3.Error as e:
             raise StorageError(f"Failed to get behavior summary: {e}")
 
     def get_similarity_history_with_timestamps(
         self, snapshot_id: str, limit: int = 10
     ) -> List[tuple]:
-        """Get similarity history with timestamps for the history command.
-
-        TASK 2 (v0.2): This method uses the idx_similarity_timestamp index
-        for efficient timestamp-ordered queries.
-
-        Args:
-            snapshot_id: The snapshot ID
-            limit: Maximum number of records to return
-
-        Returns:
-            List of tuples: (similarity, timestamp)
-        """
+        """Return ``(similarity, timestamp)`` pairs for a snapshot, newest first."""
         try:
             conn = self._get_connection()
             rows = conn.execute(
@@ -563,7 +427,6 @@ class Storage:
                 (snapshot_id, limit),
             ).fetchall()
 
-            # MYPY FIX: Ignores SQLite returning lists of Any
-            return [(row["similarity"], row["timestamp"]) for row in rows]  # type: ignore[no-any-return]
+            return [(row["similarity"], row["timestamp"]) for row in rows]
         except sqlite3.Error as e:
             raise StorageError(f"Failed to get similarity history: {e}")

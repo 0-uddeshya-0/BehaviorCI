@@ -1,7 +1,6 @@
-"""Embedding computation using sentence-transformers or injected APIs."""
+"""Embedding computation via local sentence-transformers models or injected APIs."""
 
 import threading
-import warnings
 from abc import ABC, abstractmethod
 from typing import Any, Dict, List, Optional, Union
 
@@ -49,7 +48,8 @@ class Embedder(BaseEmbedder):
                 from sentence_transformers import SentenceTransformer
 
                 self._model = SentenceTransformer(self.model_name)
-                # Suppress the FutureWarning by dynamically fetching the new method if available
+                # Prefer the newer get_embedding_dimension() when present and fall
+                # back to the older name on long-installed versions.
                 get_dim = getattr(self._model, "get_embedding_dimension", None)
                 if get_dim is None:
                     get_dim = self._model.get_sentence_embedding_dimension
@@ -90,7 +90,6 @@ class Embedder(BaseEmbedder):
             raise EmbeddingError(f"Embedding computation failed: {e}")
 
     def embed_single(self, text: str) -> np.ndarray:
-        # MYPY FIX: Ensure strict return checking ignores numpy inheritance
         return self.embed(text)  # type: ignore[no-any-return]
 
     def get_dimension(self) -> int:

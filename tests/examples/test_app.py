@@ -4,7 +4,7 @@ These tests demonstrate how to use BehaviorCI for behavioral regression testing.
 """
 
 import pytest
-from fake_llm import FakeLLM, get_llm, reset_llm
+from fake_llm import get_llm, reset_llm
 
 from behaviorci import behavior
 

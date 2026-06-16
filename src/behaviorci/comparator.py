@@ -1,14 +1,13 @@
-"""Comparison logic for behavioral regression testing."""
+"""Comparison logic: lexical guards, semantic similarity, variance thresholds."""
 
 import json
-import warnings
 from typing import List, Optional, Tuple, Union
 
 import numpy as np
 
 from .embedder import BaseEmbedder, get_embedder
-from .exceptions import ComparisonError, ModelMismatchError, ModelMismatchWarning
-from .models import ComparisonResult, Snapshot
+from .exceptions import ModelMismatchError
+from .models import ComparisonResult
 from .storage import Storage
 
 
@@ -24,7 +23,6 @@ class Comparator:
             norm = np.linalg.norm(centroid)
             if norm > 0:
                 centroid = centroid / norm
-            # MYPY FIX: Numpy array operations return 'Any' to strict type checkers
             return centroid.astype(np.float32)  # type: ignore[no-any-return]
         return self.embedder.embed_single(text)
 
@@ -101,7 +99,7 @@ class Comparator:
                     effective_threshold=base_threshold,
                     base_threshold=base_threshold,
                     lexical_passed=False,
-                    message=f"No snapshot found. Run with --behaviorci-record to create.",
+                    message="No snapshot found. Run with --behaviorci-record to create.",
                     stored_model=None,
                     current_model=None,
                 )

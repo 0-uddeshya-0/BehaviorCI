@@ -1,38 +1,31 @@
-"""Pytest plugin for BehaviorCI - core engine.
+"""pytest integration for BehaviorCI.
 
-CRITICAL: Uses item.stash to pass data between hooks.
-Implements return value capture pattern from api.py.
-
-BUG FIXES APPLIED:
-- BUG-003: Uses get_storage() singleton instead of direct Storage() instantiation
-- FIX-004: Added --behaviorci-record-missing flag for CI workflows
-- FIX-005: Validates behavior_id uniqueness at collection time
-- FIX-006: Removed pytest_runtest_call hook to prevent double-execution.
-           The previous implementation had a hook that called the test runner,
-           which conflicted with pytest's default runner causing duplicate executions.
-- FIX-009: Added mandatory output review block on snapshot recording to prevent blind baselines.
-- FIX-010: Formats Centroid Baseline outputs safely for terminal reports.
+The plugin runs each ``@behavior`` test the normal way and then, in
+``pytest_runtest_makereport``, reads the value the decorator stashed on the
+function and either records a baseline or compares against the stored one.
+Doing the work in ``makereport`` (rather than a custom call hook) keeps the
+test executing exactly once.
 """
 
 import json
-import os
 import subprocess
+from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any, Dict, List, Optional, Union
 
 import pytest
 
-from .api import get_behavior_config, serialize_inputs
 from .comparator import Comparator
 from .embedder import DEFAULT_MODEL_NAME, get_embedder
-from .exceptions import BehaviorCIError, ConfigurationError, SerializationError
-from .storage import get_storage, reset_all_storage
+from .exceptions import BehaviorCIError, ConfigurationError
+from .storage import get_storage
 
-# Stash keys for passing data between hooks
+# Stash key used to pass per-item config from collection to the report hook.
 CONFIG_KEY = pytest.StashKey[dict]()
 
 
 def pytest_addoption(parser: Any) -> None:
-    """Add BehaviorCI command-line options."""
+    """Register BehaviorCI's command-line options."""
     group = parser.getgroup("behaviorci", "Behavioral regression testing for LLMs")
     group.addoption(
         "--behaviorci",
@@ -47,30 +40,40 @@ def pytest_addoption(parser: Any) -> None:
         help="Record new snapshots (overwrites existing)",
     )
     group.addoption(
-        "--behaviorci-update", action="store_true", default=False, help="Update failing snapshots"
+        "--behaviorci-update",
+        action="store_true",
+        default=False,
+        help="Update failing snapshots",
     )
     group.addoption(
         "--behaviorci-record-missing",
         action="store_true",
         default=False,
-        help="Record missing snapshots instead of failing (CI workflow)",
+        help="Record snapshots that don't exist yet instead of failing (CI workflow)",
     )
     group.addoption(
         "--behaviorci-db",
         action="store",
         default=None,
-        help="Path to BehaviorCI database (default: .behaviorci/behaviorci.db)",
+        help="Path to the BehaviorCI database (default: .behaviorci/behaviorci.db)",
     )
     group.addoption(
         "--behaviorci-model",
         action="store",
-        default="sentence-transformers/all-MiniLM-L6-v2",  # FIX: Default model
-        help="Embedding model name (default: sentence-transformers/all-MiniLM-L6-v2)",
+        default=DEFAULT_MODEL_NAME,
+        help=f"Embedding model name (default: {DEFAULT_MODEL_NAME})",
+    )
+    group.addoption(
+        "--behaviorci-report",
+        action="store",
+        default=None,
+        metavar="PATH",
+        help="Write a machine-readable JSON report of results to PATH (for CI/automation)",
     )
 
 
 def pytest_configure(config: Any) -> None:
-    """Configure BehaviorCI based on options."""
+    """Resolve the chosen options into flags on the pytest config object."""
     config.behaviorci_enabled = (
         config.getoption("--behaviorci")
         or config.getoption("--behaviorci-record")
@@ -81,59 +84,63 @@ def pytest_configure(config: Any) -> None:
     config.behaviorci_update = config.getoption("--behaviorci-update")
     config.behaviorci_record_missing = config.getoption("--behaviorci-record-missing")
     config.behaviorci_db_path = config.getoption("--behaviorci-db")
-    # FIX: Ensure model name is never None
     config.behaviorci_model = config.getoption("--behaviorci-model")
+    config.behaviorci_report = config.getoption("--behaviorci-report")
+    # Per-test outcomes collected during the run for the optional JSON report.
+    config._behaviorci_results = []
 
 
 def pytest_collection_modifyitems(config: Any, items: Any) -> None:
-    """Validate behavior tests during collection."""
+    """Validate behavior ids and stash each item's config before tests run."""
     if not config.behaviorci_enabled:
         return
 
     seen_ids: Dict[str, tuple] = {}
 
     for item in items:
-        if hasattr(item.obj, "_behavior_config"):
-            config_obj = item.obj._behavior_config
-            behavior_id = config_obj.behavior_id
-            func_path = item.location[0]
-            func_name = item.location[2]
-            if "[" in func_name:
-                func_name = func_name.split("[")[0]
-            func_key = (func_path, func_name)
+        if not hasattr(item.obj, "_behavior_config"):
+            continue
 
-            if behavior_id in seen_ids:
-                other_func_key = seen_ids[behavior_id]
-                if other_func_key != func_key:
-                    other_item = next(
-                        (
-                            i
-                            for i in items
-                            if hasattr(i.obj, "_behavior_config")
-                            and i.obj._behavior_config.behavior_id == behavior_id
-                        ),
-                        None,
-                    )
-                    raise ConfigurationError(
-                        f"Duplicate behavior_id '{behavior_id}' detected:\n"
-                        f"  - {item.nodeid}\n"
-                        f"  - {other_item.nodeid if other_item else 'unknown'}\n"
-                        f"Each @behavior decorator must have a unique behavior_id."
-                    )
-            else:
-                seen_ids[behavior_id] = func_key
+        config_obj = item.obj._behavior_config
+        behavior_id = config_obj.behavior_id
 
-            item.stash[CONFIG_KEY] = {
-                "behavior_id": behavior_id,
-                "threshold": config_obj.threshold,
-                "must_contain": config_obj.must_contain,
-                "must_not_contain": config_obj.must_not_contain,
-            }
+        # Parametrized tests share a function, so key uniqueness on the function
+        # location rather than the parametrized node id.
+        func_path = item.location[0]
+        func_name = item.location[2]
+        if "[" in func_name:
+            func_name = func_name.split("[")[0]
+        func_key = (func_path, func_name)
+
+        if behavior_id in seen_ids and seen_ids[behavior_id] != func_key:
+            other_item = next(
+                (
+                    i
+                    for i in items
+                    if hasattr(i.obj, "_behavior_config")
+                    and i.obj._behavior_config.behavior_id == behavior_id
+                ),
+                None,
+            )
+            raise ConfigurationError(
+                f"Duplicate behavior_id '{behavior_id}' detected:\n"
+                f"  - {item.nodeid}\n"
+                f"  - {other_item.nodeid if other_item else 'unknown'}\n"
+                f"Each @behavior decorator must have a unique behavior_id."
+            )
+        seen_ids.setdefault(behavior_id, func_key)
+
+        item.stash[CONFIG_KEY] = {
+            "behavior_id": behavior_id,
+            "threshold": config_obj.threshold,
+            "must_contain": config_obj.must_contain,
+            "must_not_contain": config_obj.must_not_contain,
+        }
 
 
 @pytest.hookimpl(tryfirst=True, hookwrapper=True)
 def pytest_runtest_makereport(item: Any, call: Any) -> Any:
-    """Generate report for behavior tests."""
+    """Record or compare a behavior snapshot after the test's call phase."""
     outcome = yield
 
     if CONFIG_KEY not in item.stash:
@@ -163,7 +170,6 @@ def pytest_runtest_makereport(item: Any, call: Any) -> Any:
         return
 
     storage = get_storage(item.config.behaviorci_db_path)
-    # FIX: Now safe to pass None (will use default), but config ensures it's set
     embedder = get_embedder(item.config.behaviorci_model)
     comparator = Comparator(storage, embedder)
 
@@ -176,7 +182,8 @@ def pytest_runtest_makereport(item: Any, call: Any) -> Any:
     record_missing = item.config.behaviorci_record_missing
 
     try:
-        # Format display text for Centroids
+        # For centroid baselines the captured value is a list of samples; show
+        # the first sample in reports and note how many were averaged.
         display_text = output_text[0] if isinstance(output_text, list) else output_text
         centroid_msg = (
             f" (Centroid of {len(output_text)} samples)" if isinstance(output_text, list) else ""
@@ -194,14 +201,23 @@ def pytest_runtest_makereport(item: Any, call: Any) -> Any:
             report.sections.append(
                 (
                     "BehaviorCI",
-                    f"✅ Recorded snapshot: {behavior_id}{centroid_msg}\n"
+                    f"Recorded snapshot: {behavior_id}{centroid_msg}\n"
                     f"Snapshot ID: {snapshot_id[:16]}...\n\n"
-                    f"⚠️ URGENT: Review the primary captured output below to ensure it is correct.\n"
-                    f"This will be your new ground truth for future tests.\n"
-                    f"{'='*50}\n"
+                    f"Review the captured output below to make sure it is correct -- "
+                    f"it becomes the baseline for future runs.\n"
+                    f"{'=' * 50}\n"
                     f"{display_text}\n"
-                    f"{'='*50}",
+                    f"{'=' * 50}",
                 )
+            )
+            _collect_result(
+                item,
+                behavior_id,
+                snapshot_id,
+                "recorded",
+                True,
+                output_text,
+                model=embedder.model_name,
             )
         else:
             result = comparator.compare(
@@ -226,15 +242,24 @@ def pytest_runtest_makereport(item: Any, call: Any) -> Any:
                 report.sections.append(
                     (
                         "BehaviorCI",
-                        f"✅ Auto-recorded missing snapshot: {behavior_id}{centroid_msg}\n"
+                        f"Auto-recorded missing snapshot: {behavior_id}{centroid_msg}\n"
                         f"Snapshot ID: {snapshot_id[:16]}...\n\n"
-                        f"⚠️ URGENT: Review the primary captured output below to ensure it is correct.\n"
-                        f"This will be your new ground truth for future tests.\n"
-                        f"{'='*50}\n"
+                        f"Review the captured output below to make sure it is correct -- "
+                        f"it becomes the baseline for future runs.\n"
+                        f"{'=' * 50}\n"
                         f"{display_text}\n"
-                        f"{'='*50}\n"
-                        f"(Use --behaviorci-record to record all, --behaviorci for strict mode)",
+                        f"{'=' * 50}\n"
+                        f"(Use --behaviorci-record to re-record all, --behaviorci for strict mode)",
                     )
+                )
+                _collect_result(
+                    item,
+                    behavior_id,
+                    snapshot_id,
+                    "recorded_missing",
+                    True,
+                    output_text,
+                    model=embedder.model_name,
                 )
             else:
                 report_lines = [
@@ -254,6 +279,19 @@ def pytest_runtest_makereport(item: Any, call: Any) -> Any:
                     )
 
                 report.sections.append(("BehaviorCI", "\n".join(report_lines)))
+                _collect_result(
+                    item,
+                    result.behavior_id,
+                    result.snapshot_id,
+                    "checked",
+                    result.passed,
+                    output_text,
+                    model=embedder.model_name,
+                    similarity=result.similarity,
+                    base_threshold=result.base_threshold,
+                    effective_threshold=result.effective_threshold,
+                    model_mismatch=result.model_mismatch,
+                )
 
                 if not result.passed:
                     report.outcome = "failed"
@@ -270,10 +308,95 @@ def pytest_runtest_makereport(item: Any, call: Any) -> Any:
     except BehaviorCIError as e:
         report.outcome = "failed"
         report.longrepr = f"BehaviorCI Error: {e.message}"
+        _collect_result(
+            item,
+            behavior_id,
+            None,
+            "error",
+            False,
+            output_text,
+            model=embedder.model_name,
+            error=e.message,
+        )
+
+
+def _collect_result(
+    item: Any,
+    behavior_id: str,
+    snapshot_id: Optional[str],
+    action: str,
+    passed: bool,
+    output_text: Union[str, List[str]],
+    model: str,
+    similarity: Optional[float] = None,
+    base_threshold: Optional[float] = None,
+    effective_threshold: Optional[float] = None,
+    model_mismatch: bool = False,
+    error: Optional[str] = None,
+) -> None:
+    """Record one test's outcome for the optional JSON report."""
+    results = getattr(item.config, "_behaviorci_results", None)
+    if results is None:
+        return
+    entry: Dict[str, Any] = {
+        "behavior_id": behavior_id,
+        "snapshot_id": snapshot_id,
+        "action": action,
+        "passed": passed,
+        "similarity": similarity,
+        "base_threshold": base_threshold,
+        "effective_threshold": effective_threshold,
+        "model_mismatch": model_mismatch,
+        "samples": len(output_text) if isinstance(output_text, list) else 1,
+        "model": model,
+        "nodeid": item.nodeid,
+    }
+    if error is not None:
+        entry["error"] = error
+    results.append(entry)
+
+
+def _write_json_report(config: Any) -> None:
+    """Write the collected results to ``--behaviorci-report`` as JSON."""
+    results = getattr(config, "_behaviorci_results", [])
+
+    if config.behaviorci_record:
+        mode = "record"
+    elif config.behaviorci_update:
+        mode = "update"
+    elif config.behaviorci_record_missing:
+        mode = "record-missing"
+    else:
+        mode = "check"
+
+    recorded = sum(1 for r in results if r["action"] in ("recorded", "recorded_missing"))
+    # Report the model actually used (which may be an injected embedder) rather
+    # than the configured default.
+    model = results[0]["model"] if results else config.behaviorci_model
+    report = {
+        "schema": "behaviorci/report/v1",
+        "generated_at": datetime.now(timezone.utc).isoformat(),
+        "mode": mode,
+        "model": model,
+        "summary": {
+            "total": len(results),
+            "passed": sum(1 for r in results if r["passed"]),
+            "failed": sum(1 for r in results if not r["passed"]),
+            "recorded": recorded,
+            "checked": sum(1 for r in results if r["action"] == "checked"),
+        },
+        "results": results,
+    }
+
+    path = Path(config.behaviorci_report)
+    if path.parent and not path.parent.exists():
+        path.parent.mkdir(parents=True, exist_ok=True)
+    with open(path, "w", encoding="utf-8") as handle:
+        json.dump(report, handle, indent=2)
 
 
 def _get_git_commit() -> Optional[str]:
-    """Get current git commit hash if available."""
+    """Return the current commit hash, or ``None`` outside a git repo."""
     try:
         result = subprocess.run(
             ["git", "rev-parse", "HEAD"], capture_output=True, text=True, timeout=5
@@ -288,12 +411,10 @@ def _get_git_commit() -> Optional[str]:
 def _generate_diff(
     stored_output: str, current_output: Union[str, List[str]], similarity: float
 ) -> str:
-    """Generate a readable diff between stored and current output."""
-
-    # Extract strings if inputs are Centroid lists
+    """Build a human-readable before/after block for a failed comparison."""
     current_display = current_output[0] if isinstance(current_output, list) else current_output
 
-    # Try to parse stored JSON if it was a centroid array
+    # The stored output may be a JSON-encoded list of centroid samples.
     try:
         stored_parsed = json.loads(stored_output)
         stored_display = stored_parsed[0] if isinstance(stored_parsed, list) else stored_output
@@ -329,7 +450,7 @@ def _generate_diff(
         [
             "",
             "=" * 50,
-            "Run with --behaviorci-update to accept new behavior",
+            "Run with --behaviorci-update to accept the new behavior",
             "=" * 50,
         ]
     )
@@ -338,7 +459,7 @@ def _generate_diff(
 
 
 def pytest_terminal_summary(terminalreporter: Any, exitstatus: Any, config: Any) -> None:
-    """Print BehaviorCI summary at end of test run."""
+    """Print a short BehaviorCI summary at the end of the run."""
     if not config.behaviorci_enabled:
         return
 
@@ -350,8 +471,11 @@ def pytest_terminal_summary(terminalreporter: Any, exitstatus: Any, config: Any)
     terminalreporter.write_line(f"Behaviors: {stats['behaviors']}")
     terminalreporter.write_line(f"History records: {stats['history_records']}")
 
-    if config.behaviorci_model:
-        terminalreporter.write_line(f"Model: {config.behaviorci_model}")
+    # Show the model that was actually exercised this run when we know it.
+    results = getattr(config, "_behaviorci_results", [])
+    model = results[0]["model"] if results else config.behaviorci_model
+    if model:
+        terminalreporter.write_line(f"Model: {model}")
 
     if config.behaviorci_record:
         terminalreporter.write_line("Mode: RECORD (snapshots created/updated)")
@@ -362,7 +486,6 @@ def pytest_terminal_summary(terminalreporter: Any, exitstatus: Any, config: Any)
     else:
         terminalreporter.write_line("Mode: CHECK (regression testing)")
 
-
-def pytest_sessionfinish(session: Any, exitstatus: Any) -> None:
-    """Clean up after test session."""
-    pass
+    if getattr(config, "behaviorci_report", None):
+        _write_json_report(config)
+        terminalreporter.write_line(f"Report: {config.behaviorci_report}")

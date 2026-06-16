@@ -62,7 +62,8 @@ def behavior(
             if samples > 1:
                 if not isinstance(result, list) or not all(isinstance(x, str) for x in result):
                     raise ConfigurationError(
-                        f"Multi-sample test '{func.__name__}' must internally return a list of strings."
+                        f"Multi-sample test '{func.__name__}' must return a string "
+                        f"on each call; it is invoked {samples} times for the centroid."
                     )
             else:
                 if not isinstance(result, str):
