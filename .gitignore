@@ -4,9 +4,15 @@
 :memory:
 :memory:-shm
 
-# BehaviorCI runtime data (opt-in to commit .db, but never WAL files)
-.behaviorci/*.db-wal
-.behaviorci/*.db-shm
+# BehaviorCI runtime data.
+# In *your* project you may choose to commit .behaviorci/behaviorci.db so that
+# baselines travel with the repo (see the "Team workflows" docs). In this
+# repository the database is only a transient self-test artifact, so we ignore
+# the whole directory.
+.behaviorci/
+
+# Local review/scratch virtualenvs
+.venv-review/
 
 # Python
 __pycache__/

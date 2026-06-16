@@ -1,0 +1,15 @@
+[flake8]
+max-line-length = 100
+# E203 and W503 conflict with Black's formatting choices.
+extend-ignore = E203, W503
+exclude =
+    .git,
+    __pycache__,
+    build,
+    dist,
+    .venv,
+    .venv-review,
+    *.egg-info
+# Re-exports in package __init__ are intentional.
+per-file-ignores =
+    src/behaviorci/__init__.py:F401
