@@ -1,0 +1,78 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 340" width="1200" height="340" role="img" aria-label="BehaviorCI - pytest for LLM behavior">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#0B1020"/>
+      <stop offset="1" stop-color="#111a35"/>
+    </linearGradient>
+    <linearGradient id="accent" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#7C8CF8"/>
+      <stop offset="0.5" stop-color="#5EE0C8"/>
+      <stop offset="1" stop-color="#34D399"/>
+    </linearGradient>
+    <linearGradient id="meter" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#F87171"/>
+      <stop offset="0.55" stop-color="#FBBF24"/>
+      <stop offset="1" stop-color="#34D399"/>
+    </linearGradient>
+  </defs>
+
+  <rect x="0" y="0" width="1200" height="340" rx="20" fill="url(#bg)"/>
+
+  <!-- subtle dot texture -->
+  <g fill="#243056" opacity="0.5">
+    <circle cx="60" cy="40" r="2"/><circle cx="120" cy="40" r="2"/><circle cx="180" cy="40" r="2"/>
+    <circle cx="60" cy="300" r="2"/><circle cx="120" cy="300" r="2"/><circle cx="1140" cy="60" r="2"/>
+    <circle cx="1080" cy="60" r="2"/><circle cx="1140" cy="120" r="2"/>
+  </g>
+
+  <!-- logo glyph: approximate-equals in a rounded square -->
+  <rect x="64" y="60" width="64" height="64" rx="16" fill="#151f3d" stroke="#2b3a66" stroke-width="1.5"/>
+  <path d="M82 88 q14 -12 28 0" fill="none" stroke="url(#accent)" stroke-width="6" stroke-linecap="round"/>
+  <path d="M82 104 q14 -12 28 0" fill="none" stroke="url(#accent)" stroke-width="6" stroke-linecap="round"/>
+
+  <!-- wordmark -->
+  <text x="148" y="98" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="52" font-weight="700" fill="#F5F7FF">Behavior<tspan fill="url(#accent)">CI</tspan></text>
+  <text x="150" y="138" font-family="SFMono-Regular, Consolas, monospace" font-size="20" fill="#9DB0D9">pytest for LLM behavior</text>
+
+  <!-- tagline -->
+  <text x="66" y="196" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="22" fill="#C7D2F0">Catch prompt regressions and semantic drift</text>
+  <text x="66" y="226" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="22" fill="#C7D2F0">before they ship &#8212; by meaning, not string match.</text>
+
+  <!-- feature chips -->
+  <g font-family="SFMono-Regular, Consolas, monospace" font-size="14" fill="#AEE9DA">
+    <rect x="66" y="258" width="150" height="34" rx="17" fill="#10233a" stroke="#1f4d52" stroke-width="1"/>
+    <text x="86" y="280">Semantic diff</text>
+    <rect x="228" y="258" width="132" height="34" rx="17" fill="#10233a" stroke="#1f4d52" stroke-width="1"/>
+    <text x="248" y="280">Guardrails</text>
+    <rect x="372" y="258" width="156" height="34" rx="17" fill="#10233a" stroke="#1f4d52" stroke-width="1"/>
+    <text x="392" y="280">pytest-native</text>
+    <rect x="540" y="258" width="120" height="34" rx="17" fill="#10233a" stroke="#1f4d52" stroke-width="1"/>
+    <text x="560" y="280">Offline</text>
+  </g>
+
+  <!-- right-side: similarity meter telling the "regression caught" story -->
+  <g transform="translate(760,86)">
+    <text x="0" y="0" font-family="SFMono-Regular, Consolas, monospace" font-size="15" fill="#9DB0D9">baseline  vs  current</text>
+
+    <!-- track -->
+    <rect x="0" y="22" width="360" height="14" rx="7" fill="#1a2444"/>
+    <rect x="0" y="22" width="360" height="14" rx="7" fill="url(#meter)" opacity="0.35"/>
+    <!-- filled to ~0.72 -->
+    <rect x="0" y="22" width="259" height="14" rx="7" fill="url(#meter)"/>
+
+    <!-- threshold marker at 0.85 -->
+    <line x1="306" y1="14" x2="306" y2="46" stroke="#E5ECFF" stroke-width="2" stroke-dasharray="3 3"/>
+    <text x="306" y="64" font-family="SFMono-Regular, Consolas, monospace" font-size="13" fill="#E5ECFF" text-anchor="middle">0.85</text>
+
+    <!-- current dot at 0.72 -->
+    <circle cx="259" cy="29" r="9" fill="#0B1020" stroke="#FBBF24" stroke-width="3"/>
+
+    <text x="0" y="104" font-family="SFMono-Regular, Consolas, monospace" font-size="18" fill="#FBBF24">similarity 0.72</text>
+    <text x="148" y="104" font-family="SFMono-Regular, Consolas, monospace" font-size="18" fill="#F87171">&lt; 0.85</text>
+    <rect x="232" y="88" width="128" height="26" rx="13" fill="#3a1414" stroke="#F87171" stroke-width="1"/>
+    <text x="296" y="106" font-family="SFMono-Regular, Consolas, monospace" font-size="14" fill="#FCA5A5" text-anchor="middle">REGRESSION</text>
+
+    <!-- mini code line -->
+    <text x="0" y="150" font-family="SFMono-Regular, Consolas, monospace" font-size="14" fill="#6F82AE">@behavior("refund_reply", threshold=0.85)</text>
+  </g>
+</svg>

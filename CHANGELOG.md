@@ -1,29 +1,50 @@
 # Changelog
 
-All notable changes to this project will be documented in this file.
-The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
-and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+All notable changes to this project are documented here. The format follows
+[Keep a Changelog](https://keepachangelog.com/en/1.0.0/), and the project uses
+[Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.2.0-alpha] - Unreleased
-
-This release focuses on enterprise scalability, stripping out heavy dependencies, and adding robust support for highly creative, non-deterministic LLM prompts.
+## [0.2.0] - 2026-06-16
 
 ### Added
-- **API Embedder Injection:** Introduced the `Embedder` Abstract Base Class and `set_embedder()` interface. You can now inject lightweight APIs (OpenAI, Gemini, Cohere) directly via `conftest.py` without installing local ML models.
-- **Centroid Baselines (`samples` parameter):** Added multi-run sampling to the `@behavior` decorator. BehaviorCI can now execute highly creative prompts multiple times, compute the average embedding (Centroid), and evaluate drift against the true mathematical center of the outputs.
-- **Async Test Support:** The `@behavior` decorator now natively supports `async def` test functions (e.g., LangChain or raw `asyncio` LLM calls).
+
+- **Custom embedders.** Implement `BaseEmbedder` and register it with
+  `set_embedder()` to back BehaviorCI with any embedding API (OpenAI, Cohere,
+  Gemini, …) — no local ML stack required.
+- **Centroid baselines** via `samples=N`: the test runs N times and is compared
+  against the averaged embedding, which tames high-temperature prompts.
+- **Async test support** for `async def` behavior tests.
+- **`behaviorci history <id>`** shows a behavior's similarity over time as a
+  small ASCII meter.
+- **Machine-readable JSON report** via `--behaviorci-report PATH` for CI
+  dashboards and automation.
+- **Richer `behaviorci stats`** with a per-behavior table (count and last
+  recorded time).
+- **Documentation site** built with MkDocs Material, plus an SVG project banner.
 
 ### Changed
-- **Massive Dependency Reduction:** `sentence-transformers` and PyTorch have been removed from the core installation, shrinking the baseline CI footprint by ~1GB. Local models are now an optional extra: `pip install behaviorci[local]`.
-- **Mandatory Output Review:** To prevent the accidental commitment of LLM hallucinations as ground truth, `--behaviorci-record` now forces the primary generated text into the terminal stdout for explicit developer review.
+
+- The local embedding model is now an optional `[local]` extra; the core install
+  no longer pulls in PyTorch.
+- Minimum supported Python is now 3.10.
+- Recording a snapshot prints the captured output so it can be reviewed before
+  it becomes the baseline.
+- Reports and summaries now show the embedding model actually used, including an
+  injected one, rather than the configured default.
 
 ### Fixed
-- **Concurrent Execution Lockups:** Hardened the SQLite storage engine with Write-Ahead Logging (WAL) and thread-local connection pooling, fully resolving `database is locked` timeouts when using `pytest-xdist`.
-- **Variance Calculation:** Refactored the variance-aware threshold formula to strictly enforce the user's base threshold as a ceiling, preventing the system from becoming overly permissive on low-variance structural outputs.
-- **Model Mismatch Evaluation:** Cross-model comparisons (e.g., evaluating an `all-MiniLM-L6-v2` snapshot against an `OpenAI` embedding) now immediately raise a strict `ModelMismatchError` rather than failing silently on mathematically invalid vector comparisons.
 
-## [0.1.0] - Initial Release
-- Initial MVP release.
-- Core `@behavior` decorator and Pytest plugin integration.
-- Semantic similarity engine using `sentence-transformers`.
-- Baseline recording and updating mechanism via SQLite.
+- WAL mode with per-thread connections resolves `database is locked` errors
+  under `pytest-xdist`.
+- The variance-aware threshold now uses the configured threshold as a ceiling:
+  high-variance prompts loosen toward their observed floor while low-variance
+  prompts stay strict.
+- Comparing a baseline against a different embedding model raises a clear
+  `ModelMismatchError` instead of scoring incompatible vectors.
+- Storage connections are closed on reset and on `clear`, so handles aren't
+  leaked and the database can be deleted on Windows.
+
+## [0.1.0]
+
+- Initial release: the `@behavior` decorator and pytest plugin, semantic
+  similarity via `sentence-transformers`, and baseline recording in SQLite.

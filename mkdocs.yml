@@ -1,0 +1,60 @@
+site_name: BehaviorCI
+site_description: pytest for LLM behavior — catch prompt regressions and semantic drift before they ship.
+site_url: https://0-uddeshya-0.github.io/BehaviorCI/
+repo_url: https://github.com/0-uddeshya-0/BehaviorCI
+repo_name: 0-uddeshya-0/BehaviorCI
+edit_uri: edit/main/docs/
+
+theme:
+  name: material
+  palette:
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: indigo
+      accent: teal
+      toggle:
+        icon: material/weather-night
+        name: Switch to dark mode
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: indigo
+      accent: teal
+      toggle:
+        icon: material/weather-sunny
+        name: Switch to light mode
+  features:
+    - navigation.sections
+    - navigation.top
+    - navigation.tracking
+    - content.code.copy
+    - content.code.annotate
+    - search.suggest
+    - search.highlight
+    - toc.follow
+
+markdown_extensions:
+  - admonition
+  - attr_list
+  - md_in_html
+  - tables
+  - toc:
+      permalink: true
+  - pymdownx.details
+  - pymdownx.highlight:
+      anchor_linenums: true
+  - pymdownx.inlinehilite
+  - pymdownx.snippets
+  - pymdownx.superfences:
+      custom_fences:
+        - name: mermaid
+          class: mermaid
+          format: !!python/name:pymdownx.superfences.fence_code_format
+
+nav:
+  - Home: index.md
+  - Quick start: quickstart.md
+  - Guide: guide.md
+  - CLI reference: cli.md
+  - CI & teams: ci.md
+  - Custom embedders: embedders.md
+  - FAQ: faq.md
